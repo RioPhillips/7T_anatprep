@@ -11,6 +11,7 @@ from .utils import (
     find_config_from_cwd,
     load_anatprep_config,
     load_mp2rage_params,
+    config_get
 )
 from .iteration import IterationState
 
@@ -26,4 +27,5 @@ __all__ = [
     "find_config_from_cwd",
     "load_anatprep_config",
     "load_mp2rage_params",
+    "config_get"
 ]
