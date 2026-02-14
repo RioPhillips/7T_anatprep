@@ -73,11 +73,13 @@ See `configs/example_anatprep_config.yml` for a full example.
 ```bash
 cd /path/to/my_study
 
-# 1. Brain mask from INV2
+
+# 1. Compute T1w + T1map
+anatprep pymp2rage --subject S01 --session MR1
+
+# 2. Brain mask from INV2
 anatprep spm-mask --subject S01 --session MR1
 
-# 2. Compute T1w + T1map
-anatprep pymp2rage --subject S01 --session MR1
 
 # 3. Remove background noise
 anatprep denoise --subject S01 --session MR1
@@ -153,8 +155,8 @@ derivatives/anatprep/
 
 | Command | Description |
 |---------|-------------|
-| `spm-mask` | Brain mask from INV2 via SPM segmentation |
 | `pymp2rage` | Compute T1w (UNIT1) + T1map from inversions |
+| `spm-mask` | Brain mask from INV2 via SPM segmentation |
 | `denoise` | Remove background noise (Heij/de Hollander method) |
 | `cat12` | CAT12 tissue segmentation |
 | `sinus-auto` | Auto-generate sinus exclusion mask |
