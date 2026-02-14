@@ -1,0 +1,64 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "anatprep"
+version = "0.1.0"
+description = "Anatomical preprocessing pipeline for 7T MP2RAGE data"
+readme = "README.md"
+authors = [
+    {name = "Lund University 7T MRI Group"}
+]
+requires-python = ">=3.10"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+]
+keywords = ["BIDS", "MRI", "neuroimaging", "7T", "MP2RAGE", "fMRIprep"]
+
+dependencies = [
+    "click>=8.0",
+    "nibabel>=5.0",
+    "nilearn>=0.10",
+    "numpy>=1.20",
+    "scipy>=1.10",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov",
+    "black",
+    "flake8",
+]
+pymp2rage = [
+    "pymp2rage",
+]
+
+[project.urls]
+Homepage = "https://github.com/RioPhillips/anatprep"
+Repository = "https://github.com/RioPhillips/anatprep.git"
+
+[project.scripts]
+anatprep = "anatprep.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["anatprep*"]
+
+[tool.setuptools.package-data]
+"anatprep.scripts" = ["*.sh", "*.m"]
+"anatprep.scripts.helpers" = ["*.m"]
+
+[tool.black]
+line-length = 100
+target-version = ['py310', 'py311']
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]

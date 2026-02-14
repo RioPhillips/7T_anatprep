@@ -1,0 +1,24 @@
+# code/anatprep_config.yml
+#
+# Place this file in your study's code/ directory alongside config.json
+# and mp2rage.json.
+#
+# The pipeline searches for this file by traversing upward from CWD.
+tools:
+  # MATLAB / SPM (required for spm-mask and cat12 commands)
+  spm_path: "/software/matlab_tools/spm"
+  matlab_cmd: "/software/MATLAB/R2023a/bin/matlab"
+
+  # FreeSurfer (required for fmriprep command)
+  freesurfer:
+    license: "/home/user/freesurfer/license.txt"
+
+  # fMRIprep Docker settings
+  fmriprep:
+    docker_image: "nipreps/fmriprep:latest"
+    n_threads: 8
+    mem_mb: 32000
+
+# Brainmask iteration settings
+iteration:
+  max_iterations: 5
