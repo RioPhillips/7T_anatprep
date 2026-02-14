@@ -81,8 +81,8 @@ def cli():
 
     \b
     TYPICAL WORKFLOW:
-      1. anatprep spm-mask      - Brain mask from INV2
-      2. anatprep pymp2rage     - Compute T1w (UNIT1) + T1map
+      1. anatprep pymp2rage     - Compute T1w (UNIT1) + T1map
+      2. anatprep spm-mask      - Brain mask from INV2
       3. anatprep denoise       - Remove background noise
       4. anatprep cat12         - CAT12 segmentation
       5. anatprep sinus-auto    - Auto-generate sinus exclusion mask
