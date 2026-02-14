@@ -58,6 +58,7 @@ class Subject:
         if session:
             self.rawdata_dir = self.rawdata_root / self.sub_prefix / self.ses_prefix
             self.anat_dir = self.rawdata_dir / "anat"
+            self.fmap_dir = self.rawdata_dir / "fmap"
             self.deriv_dir = self.deriv_root / self.sub_prefix / self.ses_prefix
             self.log_dir = self.deriv_dir / "logs"
         else:

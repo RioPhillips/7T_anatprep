@@ -121,7 +121,7 @@ class IterationState:
         self.set_status(STATUS_FINALIZED, "User accepted this iteration.")
 
     def reset(self) -> None:
-        """Reset to iteration 1 (destructive — does not delete files)."""
+        """Reset to iteration 1 (destructive - does not delete files)."""
         self._state = self._default_state()
         self._save()
 
@@ -153,7 +153,7 @@ class IterationState:
     def summary(self) -> str:
         """One-line human-readable summary."""
         return (
-            f"Iteration {self.current_iteration}/{MAX_ITERATIONS} — "
+            f"Iteration {self.current_iteration}/{MAX_ITERATIONS}  "
             f"status: {self.status}"
         )
 

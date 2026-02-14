@@ -6,12 +6,12 @@
 # The pipeline searches for this file by traversing upward from CWD.
 tools:
   # MATLAB / SPM (required for spm-mask and cat12 commands)
-  spm_path: "/software/matlab_tools/spm"
-  matlab_cmd: "/software/MATLAB/R2023a/bin/matlab"
+  spm_path: "/path/to/spm"
+  matlab_cmd: "/path/to/MATLAB/VERSION/bin/matlab"
 
   # FreeSurfer (required for fmriprep command)
   freesurfer:
-    license: "/home/user/freesurfer/license.txt"
+    license: "/path/to/freesurfer/license.txt"
 
   # fMRIprep Docker settings
   fmriprep:

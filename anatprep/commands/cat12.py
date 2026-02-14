@@ -44,7 +44,7 @@ def run_cat12(
         sub.ensure_deriv_dirs()
 
         runs = sub.get_mp2rage_runs()
-        logger.info(f"Processing {sub} — runs: {runs}")
+        logger.info(f"Processing {sub} - runs: {runs}")
 
         for run in runs:
             cat12_dir = sub.deriv_dir / "cat12" / f"run-{run}"

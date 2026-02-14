@@ -11,6 +11,5 @@ dependencies:
   - click
   - pyyaml
   - matplotlib
-  - pip
-  - pip:
-      - install git+https://github.com/Gilles86/pymp2rage
+  - pybids
+

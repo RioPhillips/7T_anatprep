@@ -36,9 +36,7 @@ dev = [
     "black",
     "flake8",
 ]
-pymp2rage = [
-    "pymp2rage",
-]
+
 
 [project.urls]
 Homepage = "https://github.com/RioPhillips/anatprep"

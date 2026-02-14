@@ -41,7 +41,7 @@ def run_sinus_auto(
         sub.ensure_deriv_dirs()
 
         runs = sub.get_mp2rage_runs()
-        logger.info(f"Processing {sub} — runs: {runs}")
+        logger.info(f"Processing {sub} - runs: {runs}")
 
         for run in runs:
             output = sub.deriv_path("sinusauto", "mask", run=run)

@@ -47,7 +47,7 @@ def run_brainmask_edit(
             continue
 
         current_iter = state.current_iteration
-        logger.info(f"{sub} — iteration {current_iter}, status: {state.status}")
+        logger.info(f"{sub} - iteration {current_iter}, status: {state.status}")
 
         # find the brainmask to edit
         # TODO: locate the fMRIprep/FreeSurfer brainmask from the current

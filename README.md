@@ -2,7 +2,7 @@
 
 Anatomical preprocessing pipeline for 7T MP2RAGE data.
 
-Takes BIDS-organized rawdata (from [7T_BIDS_Organiser](https://github.com/RioPhillips/7T_BIDS_Organiser)) through SPM masking, pymp2rage fitting, denoising, CAT12 segmentation, sinus masking, and iterative brainmask refinement with fMRIprep - based on the [Knapen/Heij anatomical workflow](https://github.com/gjheij/linescanning/wiki/Anatomical-workflows).
+Takes BIDS-organized rawdata (from [7T_BIDS_Organiser](https://github.com/RioPhillips/7T_BIDS_Organiser)) through pymp2rage fitting, SPM masking, denoising, CAT12 segmentation, sinus masking, and iterative brainmask refinement with fMRIprep - based on the [Knapen anatomical workflow](https://github.com/tknapen/tknapen.github.io/wiki/Anatomical-workflows) and the [linescanning repo](https://github.com/gjheij/linescanning) by Heij. 
 
 
 ## Installation
@@ -16,6 +16,7 @@ conda activate anatprep
 pip install git+https://github.com/RioPhillips/7T_anatprep.git
 
 # or editable with dev dependencies
+git clone https://github.com/RioPhillips/7T_anatprep.git
 pip install -e ".[dev]"
 ```
 
@@ -169,6 +170,6 @@ derivatives/anatprep/
 |--------|-------------|
 | `--studydir`, `-s` | Study directory (auto-detected from CWD) |
 | `--subject`, `-sub` | Subject ID (without sub- prefix) |
-| `--session`, `-ses` | Session ID (optional — processes all if omitted) |
+| `--session`, `-ses` | Session ID (optional - processes all if omitted) |
 | `--force`, `-f` | Force overwrite existing outputs |
 | `--verbose`, `-v` | Verbose output |

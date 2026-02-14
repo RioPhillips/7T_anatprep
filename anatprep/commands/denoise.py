@@ -38,7 +38,7 @@ def run_denoise(
         sub.ensure_deriv_dirs()
 
         runs = sub.get_mp2rage_runs()
-        logger.info(f"Processing {sub} — runs: {runs}")
+        logger.info(f"Processing {sub} - runs: {runs}")
 
         for run in runs:
             output = sub.deriv_path("denoised", "T1w", run=run)
@@ -110,7 +110,7 @@ def _rm_background(
 
     inv2_max = np.max(inv2)
     if inv2_max == 0:
-        raise ValueError("INV2 image has max intensity 0 — cannot denoise.")
+        raise ValueError("INV2 image has max intensity 0 - cannot denoise.")
 
     inv2_norm = inv2 / inv2_max
     mean_inside = np.mean(inv2_norm[mask == 1]) if np.any(mask == 1) else 1.0

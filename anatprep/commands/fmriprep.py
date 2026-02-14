@@ -52,7 +52,7 @@ def run_fmriprep(
         state = IterationState(sub.deriv_dir)
         iteration = state.current_iteration
 
-        logger.info(f"Processing {sub} — iteration {iteration}")
+        logger.info(f"Processing {sub} - iteration {iteration}")
         logger.info(f"  fMRIprep image: {fmriprep_image}")
 
         # paths
@@ -130,4 +130,4 @@ def _snapshot_masks(sub, iter_dir: Path, logger) -> None:
                 dst = iter_dir / src.name
                 if not dst.exists():
                     shutil.copy2(src, dst)
-                    logger.debug(f"Snapshot: {src.name} → iter-{iter_dir.name}/")
+                    logger.debug(f"Snapshot: {src.name} --> iter-{iter_dir.name}/")
