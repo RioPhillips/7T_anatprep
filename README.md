@@ -2,7 +2,7 @@
 
 Anatomical preprocessing pipeline for 7T MP2RAGE data.
 
-Takes BIDS-organized rawdata (from [dcm2bids](https://github.com/RioPhillips/7T_BIDS_Organiser)) through SPM masking, pymp2rage fitting, denoising, CAT12 segmentation, sinus masking, and iterative brainmask refinement with fMRIprep - based on the [Knapen/Heij anatomical workflow](https://github.com/gjheij/linescanning/wiki/Anatomical-workflows).
+Takes BIDS-organized rawdata (from [7T_BIDS_Organiser](https://github.com/RioPhillips/7T_BIDS_Organiser)) through SPM masking, pymp2rage fitting, denoising, CAT12 segmentation, sinus masking, and iterative brainmask refinement with fMRIprep - based on the [Knapen/Heij anatomical workflow](https://github.com/gjheij/linescanning/wiki/Anatomical-workflows).
 
 
 ## Installation
