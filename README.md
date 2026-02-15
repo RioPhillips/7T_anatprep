@@ -22,7 +22,7 @@ pip install -e ".[dev]"
 
 ### Dependencies
 
-- **MATLAB** + **SPM12/25** + **CAT12** toolbox (for `spm-mask` and `cat12`)
+- **MATLAB** + **SPM12/25** + **CAT12** + "Image Processing" toolbox (for `spm-mask` and `cat12`)
 - **FSL** (for FLIRT coregistration in `sinus-auto`)
 - **Docker** (for fMRIprep)
 - **ITK-Snap** (for manual mask editing)
@@ -79,7 +79,6 @@ anatprep pymp2rage --subject S01 --session MR1
 
 # 2. Brain mask from INV2
 anatprep spm-mask --subject S01 --session MR1
-
 
 # 3. Remove background noise
 anatprep denoise --subject S01 --session MR1
@@ -155,9 +154,9 @@ derivatives/anatprep/
 
 | Command | Description |
 |---------|-------------|
-| `pymp2rage` | Compute T1w (UNIT1) + T1map from inversions |
+| `pymp2rage` | Compute T1w (UNIT1) + T1map from inversions, utilizes B1-fieldmap correction if available |
 | `spm-mask` | Brain mask from INV2 via SPM segmentation |
-| `denoise` | Remove background noise (Heij/de Hollander method) |
+| `denoise` | Remove background noise |
 | `cat12` | CAT12 tissue segmentation |
 | `sinus-auto` | Auto-generate sinus exclusion mask |
 | `sinus-edit` | Manual sinus mask editing (ITK-Snap) |
