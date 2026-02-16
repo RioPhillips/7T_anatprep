@@ -41,22 +41,28 @@ def run_denoise(
         logger.info(f"Processing {sub} - runs: {runs}")
 
         for run in runs:
-            output = sub.deriv_path("denoised", "T1w", run=run)
+            # pymp2rage T1w variants (standard and/or b1corr)
+            t1w_standard = sub.find_deriv_file(
+                "desc-pymp2rage_T1w", run=run, subdir="pymp2rage"
+            )
+            t1w_b1corr = sub.find_deriv_file(
+                "desc-pymp2rageb1corr_T1w", run=run, subdir="pymp2rage"
+            )
 
-            should_run, _ = check_outputs_exist([output], logger, force)
-            if not should_run:
-                continue
+            variants = []
+            if t1w_standard:
+                variants.append((t1w_standard, "denoised"))
+            if t1w_b1corr:
+                variants.append((t1w_b1corr, "denoisedb1corr"))
 
-            # the T1w from pymp2rage step
-            t1w_file = sub.find_deriv_file("desc-pymp2rage", run=run)
-            if t1w_file is None:
+            if not variants:
                 logger.error(
-                    f"pymp2rage T1w not found for run-{run}. "
+                    f"No pymp2rage T1w found for run-{run}. "
                     "Run 'anatprep pymp2rage' first."
                 )
                 continue
 
-            # the SPM brain mask
+            # the SPM brain mask (shared for all variants of this run)
             mask_file = sub.find_deriv_file("desc-spmmask", run=run)
             if mask_file is None:
                 logger.error(
@@ -65,7 +71,7 @@ def run_denoise(
                 )
                 continue
 
-            # raw INV2
+            # raw INV2 (shared for all variants of this run)
             try:
                 inv2_file = sub.get_raw_inv2(run)
             except FileNotFoundError:
@@ -75,18 +81,27 @@ def run_denoise(
                     logger.error(f"INV2 not found for run-{run}. Skipping.")
                     continue
 
-            logger.info(f"Denoising run-{run}")
-            logger.info(f"  T1w:  {t1w_file.name}")
-            logger.info(f"  Mask: {mask_file.name}")
-            logger.info(f"  INV2: {inv2_file.name}")
+            # process each T1w 
+            for t1w_file, out_desc in variants:
+                output = sub.deriv_path(out_desc, "T1w", run=run)
 
-            _rm_background(t1w_file, mask_file, inv2_file, output)
+                should_run, _ = check_outputs_exist([output], logger, force)
+                if not should_run:
+                    continue
 
-            if output.exists():
-                logger.info(f"  Output: {output.name}")
-            else:
-                logger.error(f"Denoised output was not produced for run-{run}")
+                logger.info(f"Denoising run-{run} ({out_desc})")
+                logger.info(f"  T1w:  {t1w_file.name}")
+                logger.info(f"  Mask: {mask_file.name}")
+                logger.info(f"  INV2: {inv2_file.name}")
 
+                _rm_background(t1w_file, mask_file, inv2_file, output)
+
+                if output.exists():
+                    logger.info(f"  Output: {output.name}")
+                else:
+                    logger.error(
+                        f"Denoised output was not produced for run-{run} ({out_desc})"
+                    )
 
 def _rm_background(
     t1w_path: Path,
