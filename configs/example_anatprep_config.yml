@@ -5,7 +5,7 @@
 #
 # The pipeline searches for this file by traversing upward from CWD.
 tools:
-  # MATLAB / SPM (required for spm-mask and cat12 commands)
+  # MATLAB / SPM (required for mask and cat12 commands)
   spm_path: "/path/to/spm"
   matlab_cmd: "/path/to/MATLAB/VERSION/bin/matlab"
 

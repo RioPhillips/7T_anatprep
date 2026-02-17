@@ -99,13 +99,13 @@ def cli():
     pass
 
 
-# spm-mask
+# mask
 
 @cli.command("mask", context_settings=dict(help_option_names=["-h", "--help"]))
 @common_options
 @click.option(
     "--bet",
-    "method"
+    "method",
     flag_value="bet",
     default=True,
     help="Use FSL BET for masking (default)"

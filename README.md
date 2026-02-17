@@ -22,7 +22,7 @@ pip install -e ".[dev]"
 
 ### Dependencies
 
-- **MATLAB** + **SPM12/25** + **CAT12** + "Image Processing" toolbox (for `spm-mask` and `cat12`)
+- **MATLAB** + **SPM12/25** + **CAT12** + "Image Processing" toolbox (for `mask` and `cat12`)
 - **FSL** (for FLIRT coregistration in `sinus-auto`)
 - **Docker** (for fMRIprep)
 - **ITK-Snap** (for manual mask editing)
