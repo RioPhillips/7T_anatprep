@@ -12,7 +12,7 @@ Strategy:
    - Compute intensity statistics within the ROI only.
    - Apply adaptive high-intensity threshold
      (mean + k*std or percentile-based).
-     
+
 3. Optional FLAIR refinement (if available)
    - Register FLAIR → T1w (FLIRT, 6 DOF, mutual information).
    - Sinus voxels tend to remain bright on T1w but not on FLAIR.
@@ -126,10 +126,11 @@ def _sinus_from_flair(
         8. Save result
     """
     # 1. Register FLAIR --> T1w using mutual information cost
-    flair_reg = work_dir / f"flair_in_t1w_{flair.stem}.nii.gz"
+    flair_base = flair.name.replace(".nii.gz", "").replace(".nii", "")
+    flair_reg = work_dir / f"flair_in_t1w_{flair_base}.nii.gz"
     xfm_dir = work_dir / "xfm"
     xfm_dir.mkdir(parents=True, exist_ok=True)
-    mat_file = xfm_dir / f"flair_to_t1w_{flair.stem}.mat"
+    mat_file = xfm_dir / f"flair_to_t1w_{flair_base}.mat"
 
     if not flair_reg.exists():
         logger.info("Registering FLAIR --> T1w (FLIRT 6-DOF, mutual info)")
