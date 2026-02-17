@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Optional, Tuple
 
 from anatprep.commands import iter_sessions
-from anatprep.commands.spm_mask import _find_script
+from anatprep.commands.mask import _find_script
 from anatprep.core import (
     setup_logging,
     load_anatprep_config,

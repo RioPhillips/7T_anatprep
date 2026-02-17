@@ -92,7 +92,7 @@ def run_sinus_auto(
             if brain_mask is None:
                 brain_mask = sub.find_deriv_file("desc-spmmask", run=run)
             if brain_mask is None:
-                logger.error("No INV2-based mask found. Run 'anatprep spm-mask' first.")
+                logger.error("No INV2-based mask found. Run 'anatprep mask' first.")
                 continue
 
             _sinus_from_flair(
