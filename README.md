@@ -78,7 +78,7 @@ cd /path/to/my_study
 anatprep pymp2rage --subject S01 --session MR1
 
 # 2. Brain mask from INV2
-anatprep spm-mask --subject S01 --session MR1
+anatprep mask --subject S01 --session MR1 ( + either --bet or --spm)
 
 # 3. Remove background noise
 anatprep denoise --subject S01 --session MR1
@@ -112,7 +112,7 @@ anatprep fmriprep --subject S01 --session MR1
 Omit `--session` to process all sessions for a subject:
 
 ```bash
-anatprep spm-mask --subject S01
+anatprep mask --subject S01 --bet
 anatprep pymp2rage --subject S01
 # etc.
 ```
@@ -155,7 +155,7 @@ derivatives/anatprep/
 | Command | Description |
 |---------|-------------|
 | `pymp2rage` | Compute T1w (UNIT1) + T1map from inversions, utilizes B1-fieldmap correction if available |
-| `spm-mask` | Brain mask from INV2 via SPM segmentation |
+| `mask` | Brain mask from INV2 via either FSL BET or SPM segmentation |
 | `denoise` | Remove background noise |
 | `cat12` | CAT12 tissue segmentation |
 | `sinus-auto` | Auto-generate sinus exclusion mask |
