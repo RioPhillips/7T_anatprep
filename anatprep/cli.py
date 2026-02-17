@@ -12,7 +12,7 @@ from anatprep.core import resolve_studydir
 
 
 
-# Custom Click classes
+# click classes
 
 class HelpfulGroup(click.Group):
     """Show help when no command is given."""
@@ -82,7 +82,7 @@ def cli():
     \b
     TYPICAL WORKFLOW:
       1. anatprep pymp2rage     - Compute T1w (UNIT1) + T1map
-      2. anatprep spm-mask      - Brain mask from INV2
+      2. anatprep mask          - Brain mask from INV2 (--spm or --bet)
       3. anatprep denoise       - Remove background noise
       4. anatprep cat12         - CAT12 segmentation
       5. anatprep sinus-auto    - Auto-generate sinus exclusion mask
@@ -101,19 +101,43 @@ def cli():
 
 # spm-mask
 
-@cli.command("spm-mask", context_settings=dict(help_option_names=["-h", "--help"]))
+@cli.command("mask", context_settings=dict(help_option_names=["-h", "--help"]))
 @common_options
-def spm_mask(studydir, subject, session, force, verbose):
+@click.option(
+    "--bet",
+    "method"
+    flag_value="bet",
+    default=True,
+    help="Use FSL BET for masking (default)"
+)
+@click.option(
+    "--spm",
+    "method",
+    flag_value="spm",
+    help="Use SPM segmantation for masking"
+)
+def mask(studydir, subject, session, force, verbose, method):
     """
-    Create brain mask from INV2 image using SPM segmentation.
+    Create brain mask from INV2 image. Two methods are available:
+
+    \b
+     --bet  FSL BET brain extraction.
+            Requires FSL (bet must be on PATH).
+            Uses: bet <INV2> <out> -f 0.3 -g 0.1 -m
+            Output: desc-bet_mask.nii.gz
+
+    \b
+     --spm  SPM segmentation via MATLAB.
+            Requires MATLAB and SPM. Set paths in code/anatprep_config.yml
+            Output: desc-spmmask_mask.nii.gz
 
     Requires MATLAB and SPM. Set spm_path and matlab_cmd in
     code/anatprep_config.yml.
     """
     studydir = resolve_studydir(studydir)
-    from anatprep.commands.spm_mask import run_spm_mask
-    run_spm_mask(studydir=studydir, subject=subject, session=session,
-                 force=force, verbose=verbose)
+    from anatprep.commands.mask import run_mask
+    run_mask(studydir=studydir, subject=subject, session=session,
+                 force=force, verbose=verbose, method=method)
 
 
 # pymp2rage

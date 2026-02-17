@@ -63,11 +63,12 @@ def run_denoise(
                 continue
 
             # the SPM brain mask (shared for all variants of this run)
-            mask_file = sub.find_deriv_file("desc-spmmask", run=run)
+            mask_file = sub.find_deriv_file("desc-bet", run=run)
+            if mask_file is None:
+                mask_file = sub.find_deriv_file("desc-spmmask", run=run)
             if mask_file is None:
                 logger.error(
-                    f"SPM mask not found for run-{run}. "
-                    "Run 'anatprep spm-mask' first."
+                    f"No INV2 brainmask not found for run-{run}. Run 'anatprep mask' first. "
                 )
                 continue
 
