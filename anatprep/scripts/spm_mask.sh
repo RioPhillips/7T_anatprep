@@ -121,6 +121,6 @@ fi
 if [[ -f "$OUTPUT" ]] || [[ -f "$OUTPUT_NII" ]]; then
   echo "[spm_mask] Done. Mask created."
 else
-  echo "[spm_mask] ERROR: No valid mask file produced."
+  echo "[spm_mask] ERROR: No mask file produced."
   exit 1
 fi
