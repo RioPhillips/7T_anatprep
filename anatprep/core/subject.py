@@ -112,7 +112,7 @@ class Subject:
 
         return sorted(runs) if runs else []
 
-    # Rawdata file finders
+    # rawdata file finders
 
     def get_rawdata_file(
         self,
