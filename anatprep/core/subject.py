@@ -24,7 +24,7 @@ from typing import Dict, List, Optional, Union
 
 
 class Subject:
-    """Represents a single subject (session level is optional)."""
+    # represents a single subject (session level is optional)
 
     def __init__(self, studydir: Path, subject: str, session: Optional[str] = None):
         """
@@ -86,7 +86,7 @@ class Subject:
         return sessions
 
     def for_session(self, session: str) -> "Subject":
-        """Return a new Subject pinned to a specific session."""
+        # return a new Subject pinned to a specific session
         return Subject(self.studydir, self.subject, session)
 
     def get_mp2rage_runs(self) -> List[int]:
@@ -162,7 +162,7 @@ class Subject:
         return found if return_all else found[0]
 
     def get_raw_mp2rage_parts(self, run: int) -> Dict[str, Path]:
-        """Return the four MP2RAGE component files for a given run."""
+        # returns the four MP2RAGE component files for a given run
         return {
             "inv1_mag": self.get_rawdata_file("inv-1_part-mag_MP2RAGE", run),
             "inv1_phase": self.get_rawdata_file("inv-1_part-phase_MP2RAGE", run),
@@ -171,21 +171,21 @@ class Subject:
         }
 
     def get_raw_inv2(self, run: int) -> Path:
-        """Return the combined INV2 magnitude file (for SPM masking)."""
+        # returns the combined INV2 magnitude file (for SPM masking).
         return self.get_rawdata_file("inv-2_MP2RAGE", run)
 
     def get_raw_t1w(self, run: int) -> Path:
-        """Return the raw UNIT1 (T1w) file from rawdata."""
+        # return the raw UNIT1 (T1w) file from rawdata
         return self.get_rawdata_file("acq-mp2rage", run)
 
     def has_flair(self) -> bool:
-        """Check if any FLAIR images exist for this session."""
+        # check if any FLAIR images exist for this session
         if self.anat_dir is None:
             return False
         return bool(list(self.anat_dir.glob("*FLAIR*.nii.gz")))
 
     def get_flair_files(self) -> List[Path]:
-        """Return all FLAIR NIfTI files for this session."""
+        # return all FLAIR NIfTI files for this session
         if self.anat_dir is None:
             return []
         return sorted(self.anat_dir.glob("*FLAIR*.nii.gz"))
@@ -193,7 +193,7 @@ class Subject:
     # derivatives output paths
 
     def ensure_deriv_dirs(self) -> None:
-        """Create the derivatives output directories."""
+        # create the derivatives output directories
         if self.deriv_dir:
             self.deriv_dir.mkdir(parents=True, exist_ok=True)
         if self.log_dir:
@@ -228,7 +228,7 @@ class Subject:
         return base / filename
 
     def iter_dir(self, iteration: int) -> Path:
-        """Return the directory for a brainmask iteration."""
+        # return the directory for a brainmask iteration
         d = self.deriv_dir / f"iter-{iteration}"
         d.mkdir(parents=True, exist_ok=True)
         return d
@@ -265,11 +265,11 @@ class Subject:
     # some validation checks
 
     def validate(self) -> None:
-        """
-        Check that the rawdata directory exists.
+        
+        # checks that the rawdata directory exists.
 
-        Raises FileNotFoundError with a helpful message if not.
-        """
+        # raises FileNotFoundError if not
+
         if not (self.rawdata_root / self.sub_prefix).exists():
             raise FileNotFoundError(
                 f"Subject directory not found: "

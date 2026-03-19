@@ -122,16 +122,16 @@ SCRIPT="${OUTPUT_DIR}/cat12_batch.m"
 echo "[cat12] MATLAB script:  $SCRIPT"
 echo "[cat12] Log file:       $LOGFILE"
 
-# Print image info 
+# provides image info 
 
 if command -v fslinfo &>/dev/null; then
   dims=$(fslinfo "$NII_FILE" 2>/dev/null | grep -E "^dim[1-3]|^pixdim[1-3]" | awk '{print $2}' | tr '\n' ' ')
   echo "[cat12] Image info: $dims"
 fi
 
-# Generate MATLAB batch 
+# MATLAB batch 
 
-# Start the script
+# runs the script
 cat > "$SCRIPT" <<MHEAD
 %-----------------------------------------------------------------------------
 % CAT12 batch - auto-generated $(date)
@@ -142,7 +142,7 @@ addpath(genpath('${SPM_PATH}'));
 
 MHEAD
 
-# Version-specific batch generation 
+# version-dependent script 
 
 if [[ "$VER" == "1450" ]]; then
   # CAT12 v1450 
@@ -328,7 +328,7 @@ MRUN
 
 # Run MATLAB 
 
-echo "[cat12] Starting MATLAB..."
+echo "[cat12] Starting MATLAB"
 "$MATLAB_CMD" -nodisplay -nosplash -batch "run('$SCRIPT')" > "$LOGFILE" 2>&1
 MATLAB_EXIT=$?
 
