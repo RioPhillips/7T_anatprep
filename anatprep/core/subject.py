@@ -1,21 +1,26 @@
 """
 Subject: file handling class for anatprep.
 
-Methods for finding files in rawdata/ and derivatives/anatprep/,
-construct BIDS-compliant output paths, and discover MP2RAGE runs.
+Supports both session-based and sessionless BIDS datasets.
 
-The derivatives layout is flat per session:
-
+Session-based layout (rawdata/sub-XX/ses-YY/anat/):
     derivatives/anatprep/sub-XX/ses-YY/
-        sub-XX_ses-YY_run-1_desc-spmmask_mask.nii.gz
-        sub-XX_ses-YY_run-1_desc-pymp2rage_T1w.nii.gz
+
+Sessionless layout (rawdata/sub-XX/anat/):
+    derivatives/anatprep/sub-XX/
+
+The derivatives layout is flat per subject/session:
+
+    derivatives/anatprep/sub-XX/[ses-YY/]
+        sub-XX[_ses-YY]_run-1_desc-spmmask_mask.nii.gz
+        sub-XX[_ses-YY]_run-1_desc-pymp2rage_T1w.nii.gz
         ...
         cat12/   (CAT12 produces many files)
         iter-1/  (brainmask iteration outputs)
 
 Logs go to:
 
-    derivatives/anatprep/sub-XX/ses-YY/logs/
+    derivatives/anatprep/sub-XX/[ses-YY/]logs/
 """
 
 import re
@@ -24,7 +29,7 @@ from typing import Dict, List, Optional, Union
 
 
 class Subject:
-    # represents a single subject (session level is optional)
+    """Represents a single subject (optionally pinned to a session)."""
 
     def __init__(self, studydir: Path, subject: str, session: Optional[str] = None):
         """
@@ -36,8 +41,9 @@ class Subject:
             Subject ID *without* the ``sub-`` prefix.
         session : str or None
             Session ID *without* ``ses-`` prefix.
-            If None, the caller is expected to iterate over sessions
-            returned by :meth:`get_sessions`.
+            If None, auto-detects whether the dataset is sessionless and
+            sets up paths accordingly. For session-based datasets without
+            a pinned session, use :meth:`get_sessions` to iterate.
         """
         self.studydir = Path(studydir).resolve()
         self.subject = subject
@@ -54,25 +60,67 @@ class Subject:
         self.rawdata_root = self.studydir / "rawdata"
         self.deriv_root = self.studydir / "derivatives" / "anatprep"
 
-        # session-specific paths (when session is set)
+        sub_dir = self.rawdata_root / self.sub_prefix
+
         if session:
-            self.rawdata_dir = self.rawdata_root / self.sub_prefix / self.ses_prefix
+            # --- session-based, pinned to a specific session ---
+            self.rawdata_dir = sub_dir / self.ses_prefix
             self.anat_dir = self.rawdata_dir / "anat"
             self.fmap_dir = self.rawdata_dir / "fmap"
             self.deriv_dir = self.deriv_root / self.sub_prefix / self.ses_prefix
             self.log_dir = self.deriv_dir / "logs"
+
+        elif self._is_sessionless(sub_dir):
+            # --- sessionless dataset (anat/ directly under sub-XX/) ---
+            self.rawdata_dir = sub_dir
+            self.anat_dir = sub_dir / "anat"
+            self.fmap_dir = sub_dir / "fmap"
+            self.deriv_dir = self.deriv_root / self.sub_prefix
+            self.log_dir = self.deriv_dir / "logs"
+
         else:
-            self.rawdata_dir = self.rawdata_root / self.sub_prefix
+            # --- session-based, no session pinned (discovery/base mode) ---
+            self.rawdata_dir = sub_dir
             self.anat_dir = None
+            self.fmap_dir = None
             self.deriv_dir = None
             self.log_dir = None
 
-    # session and run discovery
+    # ------------------------------------------------------------------
+    # Session / run discovery
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _is_sessionless(sub_dir: Path) -> bool:
+        """
+        Return True when anat/ lives directly under sub-XX/ (no ses-* dirs).
+
+        A dataset is sessionless when:
+          - sub_dir/anat/ exists, OR
+          - sub_dir/ exists but contains no ses-* subdirectories.
+        """
+        if not sub_dir.exists():
+            return False
+        if (sub_dir / "anat").exists():
+            return True
+        # directory exists but has no ses-* children → treat as sessionless
+        has_sessions = any(
+            d.is_dir() and d.name.startswith("ses-")
+            for d in sub_dir.iterdir()
+        )
+        return not has_sessions
+
+    def is_sessionless(self) -> bool:
+        """Return True if this subject's dataset has no session level."""
+        return self.session is None and self._is_sessionless(
+            self.rawdata_root / self.sub_prefix
+        )
 
     def get_sessions(self) -> List[str]:
         """
         Return all session IDs for this subject (e.g. ['MR1', 'MR2']).
 
+        Returns an empty list for sessionless datasets.
         Scans rawdata/sub-XX/ for ses-* directories.
         """
         sub_dir = self.rawdata_root / self.sub_prefix
@@ -86,12 +134,12 @@ class Subject:
         return sessions
 
     def for_session(self, session: str) -> "Subject":
-        # return a new Subject pinned to a specific session
+        """Return a new Subject pinned to a specific session."""
         return Subject(self.studydir, self.subject, session)
 
     def get_mp2rage_runs(self) -> List[int]:
         """
-        Discover MP2RAGE run numbers from rawdata/anat/.
+        Discover MP2RAGE run numbers from rawdata/[ses-YY/]anat/.
 
         Looks for *inv-1_part-mag_MP2RAGE* files and extracts run-N.
         Returns [1] if files exist but lack a run entity.
@@ -112,7 +160,9 @@ class Subject:
 
         return sorted(runs) if runs else []
 
-    # rawdata file finders
+    # ------------------------------------------------------------------
+    # Rawdata file finders
+    # ------------------------------------------------------------------
 
     def get_rawdata_file(
         self,
@@ -122,7 +172,7 @@ class Subject:
         return_all: bool = False,
     ) -> Union[Path, List[Path]]:
         """
-        Find file(s) matching *pattern* under rawdata/sub-XX/ses-YY/anat/.
+        Find file(s) matching *pattern* under rawdata anat directory.
 
         Parameters
         ----------
@@ -162,7 +212,7 @@ class Subject:
         return found if return_all else found[0]
 
     def get_raw_mp2rage_parts(self, run: int) -> Dict[str, Path]:
-        # returns the four MP2RAGE component files for a given run
+        """Return the four MP2RAGE component files for a given run."""
         return {
             "inv1_mag": self.get_rawdata_file("inv-1_part-mag_MP2RAGE", run),
             "inv1_phase": self.get_rawdata_file("inv-1_part-phase_MP2RAGE", run),
@@ -171,46 +221,56 @@ class Subject:
         }
 
     def get_raw_inv2(self, run: int) -> Path:
-        # returns the combined INV2 magnitude file (for SPM masking).
+        """Return the combined INV2 magnitude file (for SPM masking)."""
         return self.get_rawdata_file("inv-2_MP2RAGE", run)
 
     def get_raw_t1w(self, run: int) -> Path:
-        # return the raw UNIT1 (T1w) file from rawdata
+        """Return the raw UNIT1 (T1w) file from rawdata."""
         return self.get_rawdata_file("acq-mp2rage", run)
 
     def has_flair(self) -> bool:
-        # check if any FLAIR images exist for this session
+        """Check if any FLAIR images exist for this subject/session."""
         if self.anat_dir is None:
             return False
         return bool(list(self.anat_dir.glob("*FLAIR*.nii.gz")))
 
     def get_flair_files(self) -> List[Path]:
-        # return all FLAIR NIfTI files for this session
+        """Return all FLAIR NIfTI files for this subject/session."""
         if self.anat_dir is None:
             return []
         return sorted(self.anat_dir.glob("*FLAIR*.nii.gz"))
 
-    # derivatives output paths
+    # ------------------------------------------------------------------
+    # Derivatives output paths
+    # ------------------------------------------------------------------
 
     def ensure_deriv_dirs(self) -> None:
-        # create the derivatives output directories
+        """Create the derivatives output directories."""
         if self.deriv_dir:
             self.deriv_dir.mkdir(parents=True, exist_ok=True)
         if self.log_dir:
             self.log_dir.mkdir(parents=True, exist_ok=True)
 
-    def deriv_path(self, desc: str, suffix: str, run: Optional[int] = None,
-                   ext: str = ".nii.gz", subdir: Optional[str] = None) -> Path:
+    def deriv_path(
+        self,
+        desc: str,
+        suffix: str,
+        run: Optional[int] = None,
+        ext: str = ".nii.gz",
+        subdir: Optional[str] = None,
+    ) -> Path:
         """
         Construct a BIDS-derivatives output path.
 
-        Example
-        -------
-        >>> sub.deriv_path("spmmask", "mask", run=1)
-        derivatives/anatprep/sub-XX/ses-YY/sub-XX_ses-YY_run-1_desc-spmmask_mask.nii.gz
+        Examples
+        --------
+        Session-based:
+            >>> sub.deriv_path("spmmask", "mask", run=1)
+            derivatives/anatprep/sub-XX/ses-YY/sub-XX_ses-YY_run-1_desc-spmmask_mask.nii.gz
 
-        >>> sub.deriv_path("cat12", "T1w", run=1, subdir="cat12")
-        derivatives/anatprep/sub-XX/ses-YY/cat12/sub-XX_ses-YY_run-1_desc-cat12_T1w.nii.gz
+        Sessionless:
+            >>> sub.deriv_path("spmmask", "mask", run=1)
+            derivatives/anatprep/sub-XX/sub-XX_run-1_desc-spmmask_mask.nii.gz
         """
         parts = [self.subses_prefix]
         if run is not None:
@@ -228,12 +288,14 @@ class Subject:
         return base / filename
 
     def iter_dir(self, iteration: int) -> Path:
-        # return the directory for a brainmask iteration
+        """Return the directory for a brainmask iteration."""
         d = self.deriv_dir / f"iter-{iteration}"
         d.mkdir(parents=True, exist_ok=True)
         return d
 
-    # derivatives file finders
+    # ------------------------------------------------------------------
+    # Derivatives file finders
+    # ------------------------------------------------------------------
 
     def find_deriv_file(
         self,
@@ -262,19 +324,23 @@ class Subject:
 
         return None
 
-    # some validation checks
+    # ------------------------------------------------------------------
+    # Validation
+    # ------------------------------------------------------------------
 
     def validate(self) -> None:
-        
-        # checks that the rawdata directory exists.
+        """
+        Check that the rawdata directory structure is as expected.
 
-        # raises FileNotFoundError if not
-
-        if not (self.rawdata_root / self.sub_prefix).exists():
+        Raises FileNotFoundError if:
+          - The subject directory doesn't exist.
+          - A specific session was requested but its directory is missing.
+        """
+        sub_dir = self.rawdata_root / self.sub_prefix
+        if not sub_dir.exists():
             raise FileNotFoundError(
-                f"Subject directory not found: "
-                f"{self.rawdata_root / self.sub_prefix}\n"
-                f"Has dcm2bids been run for sub-{self.subject}?"
+                f"Subject directory not found: {sub_dir}\n"
+                f"Has bids7t been run for sub-{self.subject}?"
             )
 
         if self.session and not self.rawdata_dir.exists():
@@ -282,6 +348,10 @@ class Subject:
                 f"Session directory not found: {self.rawdata_dir}\n"
                 f"Available sessions: {self.get_sessions()}"
             )
+
+    # ------------------------------------------------------------------
+    # Dunder helpers
+    # ------------------------------------------------------------------
 
     def __repr__(self) -> str:
         ses = f"_ses-{self.session}" if self.session else ""

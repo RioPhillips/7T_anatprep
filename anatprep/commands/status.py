@@ -29,17 +29,16 @@ def run_status(
     click.echo(f"Study directory : {studydir}")
     click.echo()
 
-    # config 
+    # config
     config = load_anatprep_config(studydir)
     config_path = studydir / "code" / "anatprep_config.yml"
-
     mp2rage = load_mp2rage_params(studydir)
 
     checks = [
         ("code/anatprep_config.yml", config_path.exists()),
-        ("code/mp2rage.json", mp2rage is not None),
-        ("rawdata/", (studydir / "rawdata").exists()),
-        ("derivatives/", (studydir / "derivatives").exists()),
+        ("code/mp2rage.json",        mp2rage is not None),
+        ("rawdata/",                 (studydir / "rawdata").exists()),
+        ("derivatives/",             (studydir / "derivatives").exists()),
     ]
 
     click.echo("Study structure:")
@@ -73,28 +72,40 @@ def run_status(
         click.echo("-" * 50)
         for sd in sub_dirs:
             sub_id = sd.name.removeprefix("sub-")
-            sessions = Subject(studydir, sub_id).get_sessions()
-            click.echo(f"  {sd.name}  sessions: {sessions}")
+            tmp = Subject(studydir, sub_id)
+            sessions = tmp.get_sessions()
+            if sessions:
+                click.echo(f"  {sd.name}  sessions: {sessions}")
+            else:
+                click.echo(f"  {sd.name}  (sessionless)")
         return
 
     # --- per-subject status ---
     sub = Subject(studydir, subject, session)
 
     if session:
+        # explicit session
         _show_session_status(sub, verbose)
-    else:
-        sessions = sub.get_sessions()
-        if not sessions:
-            click.echo(f"No sessions found for sub-{subject}")
-            return
+        return
+
+    sessions = sub.get_sessions()
+
+    if sessions:
+        # session-based dataset
         for ses in sessions:
             ses_sub = sub.for_session(ses)
             click.echo(f"\n--- ses-{ses} ---")
             _show_session_status(ses_sub, verbose)
+    elif sub.is_sessionless():
+        # sessionless dataset — sub already has anat_dir set
+        click.echo(f"\n--- (sessionless) ---")
+        _show_session_status(sub, verbose)
+    else:
+        click.echo(f"No sessions and no anat/ directory found for sub-{subject}.")
 
 
 def _show_session_status(sub: Subject, verbose: bool) -> None:
-    """Show step-by-step completion for a single session."""
+    """Show step-by-step completion for a single subject/session."""
     runs = sub.get_mp2rage_runs()
     click.echo(f"  MP2RAGE runs: {runs or 'none found'}")
 
@@ -105,12 +116,12 @@ def _show_session_status(sub: Subject, verbose: bool) -> None:
         click.echo(f"\n  Run {run}:")
 
         steps = [
-            ("SPM mask",   "spmmask",    "mask"),
-            ("pymp2rage",  "pymp2rage",  "T1w"),
-            ("Denoised",   "denoised",   "T1w"),
-            ("CAT12",      "cat12",      "T1w"),
-            ("Sinus auto", "sinusauto",  "mask"),
-            ("Sinus final","sinusfinal", "mask"),
+            ("SPM mask",    "spmmask",    "mask"),
+            ("pymp2rage",   "pymp2rage",  "T1w"),
+            ("Denoised",    "denoised",   "T1w"),
+            ("CAT12",       "cat12",      "T1w"),
+            ("Sinus auto",  "sinusauto",  "mask"),
+            ("Sinus final", "sinusfinal", "mask"),
         ]
 
         for label, desc, suffix in steps:

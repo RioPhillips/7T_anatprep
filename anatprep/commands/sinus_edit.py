@@ -84,9 +84,7 @@ def run_sinus_edit(
                 subprocess.run(cmd, check=False)
             except FileNotFoundError:
                 logger.error(
-                    "ITK-Snap not found. Install it or add it to PATH.\n"
-                    "  Ubuntu: sudo apt install itksnap\n"
-                    "  Or download from: http://www.itksnap.org"
+                    "ITK-Snap not found. Install it or add it to PATH."
                 )
                 return
 

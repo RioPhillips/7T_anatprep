@@ -33,7 +33,7 @@ Usage:
 Options:
   -s, --spm      Path to SPM installation
   -m, --matlab   MATLAB command (default: matlab)
-  -i, --input    Input .nii file (or .nii.gz)
+  -i, --input    Input NIfTI file (.nii or .nii.gz)
   -o, --output   Output directory
   -l, --logdir   Log directory
   --full         Full processing mode (bias correction + SANLM). Default: brain-only.
@@ -57,16 +57,18 @@ done
 
 mkdir -p "$OUTPUT_DIR" "$LOG_DIR"
 
-# make sure inputs correct and working
+# ============================================================================
+# Validate inputs
+# ============================================================================
 
-# CAT12 directory
+# Find CAT12 directory
 CAT12_DIR=$(find -L "$SPM_PATH" -type d -name "*cat12*" -print -quit 2>/dev/null)
 if [[ -z "$CAT12_DIR" ]]; then
   echo "[cat12] ERROR: CAT12 directory not found under $SPM_PATH"
   exit 1
 fi
 
-# CAT12 version for logging (not used for branching)
+# Read CAT12 version for logging (not used for branching)
 VER="unknown"
 if [[ -f "$CAT12_DIR/Contents.txt" ]]; then
   VER=$(grep "Version" "$CAT12_DIR/Contents.txt" | cut -d" " -f3 2>/dev/null || echo "unknown")
@@ -80,20 +82,22 @@ echo "[cat12] Mode:           $MODE"
 echo "[cat12] Input:          $INPUT_FILE"
 echo "[cat12] Output:         $OUTPUT_DIR"
 
-# check TPM exists
+# Check TPM exists
 if [[ ! -f "$SPM_PATH/tpm/TPM.nii" ]]; then
   echo "[cat12] ERROR: TPM.nii not found at $SPM_PATH/tpm/TPM.nii"
   exit 1
 fi
 
-# make sure shooting template exists
+# Check shooting template exists
 SHOOTING_TPM="${CAT12_DIR}/templates_MNI152NLin2009cAsym/Template_0_GS.nii"
 if [[ ! -f "$SHOOTING_TPM" ]]; then
   echo "[cat12] ERROR: Shooting template not found at $SHOOTING_TPM"
   exit 1
 fi
 
-# gzip handling
+# ============================================================================
+# Handle gzip
+# ============================================================================
 
 INPUT_WAS_GZ=0
 if [[ "$INPUT_FILE" == *.gz ]]; then
@@ -108,7 +112,9 @@ else
   fi
 fi
 
-# logs and script paths
+# ============================================================================
+# Log and script paths
+# ============================================================================
 
 LOGFILE="${LOG_DIR}/cat12_$(date +%Y%m%d_%H%M%S).log"
 SCRIPT="${OUTPUT_DIR}/cat12_batch.m"
@@ -116,13 +122,15 @@ SCRIPT="${OUTPUT_DIR}/cat12_batch.m"
 echo "[cat12] MATLAB script:  $SCRIPT"
 echo "[cat12] Log file:       $LOGFILE"
 
-# some image info
+# Print image info
 if command -v fslinfo &>/dev/null; then
   dims=$(fslinfo "$NII_FILE" 2>/dev/null | grep -E "^dim[1-3]|^pixdim[1-3]" | awk '{print $2}' | tr '\n' ' ')
   echo "[cat12] Image info: $dims"
 fi
 
+# ============================================================================
 # Mode-dependent parameters
+# ============================================================================
 
 # "brain" mode: data already preprocessed (B1-corrected, denoised)
 #   APP=0, NCstr=0, biasstr=eps, LASstr=0, gcutstr=0
@@ -145,7 +153,9 @@ else
   echo "[cat12] Full mode: APP=1070, NCstr=2, biasstr=0.5"
 fi
 
-# generates a MATLAB batch script (r2043 version)
+# ============================================================================
+# Generate MATLAB batch (r2043 field layout)
+# ============================================================================
 
 cat > "$SCRIPT" <<MATLAB_BATCH
 %-----------------------------------------------------------------------------
@@ -279,13 +289,17 @@ spm_jobman('run', matlabbatch);
 exit
 MATLAB_BATCH
 
-# runs MATLAB
+# ============================================================================
+# Run MATLAB
+# ============================================================================
 
-echo "[cat12] Starting MATLAB and running script..."
+echo "[cat12] Starting MATLAB..."
 "$MATLAB_CMD" -nodisplay -nosplash -batch "run('$SCRIPT')" > "$LOGFILE" 2>&1
 MATLAB_EXIT=$?
 
-# check results
+# ============================================================================
+# Check results
+# ============================================================================
 
 MRI_DIR="${OUTPUT_DIR}/mri"
 TISSUE_MAPS_OK=0
@@ -304,9 +318,39 @@ if [[ $TISSUE_MAPS_OK -eq 0 ]]; then
   echo "[cat12] ERROR: CAT12 did not produce tissue maps"
   echo "[cat12] MATLAB exit code: $MATLAB_EXIT"
 
+  if [[ -f "$LOGFILE" ]]; then
+    if grep -q "No field(s) named" "$LOGFILE"; then
+      echo "[cat12] ERROR: Batch field name mismatch."
+      echo "[cat12] The installed CAT12 version does not match r2043 field layout."
+      echo "[cat12] Check: grep 'Version' \$CAT12_DIR/Contents.txt"
+    fi
+    if grep -q "Attempt to grow array along ambiguous dimension" "$LOGFILE"; then
+      echo "[cat12] Known error: cat_vol_morph dimension issue."
+      echo "[cat12] This often happens when APP is enabled on pre-processed data."
+      echo "[cat12] Ensure you are running in brain mode (default)."
+    fi
+    if grep -q "logical indices contain a true value outside" "$LOGFILE"; then
+      echo "[cat12] Known error: logical indexing out of bounds in cat_vol_morph."
+      echo "[cat12] This typically means APP/bias correction was applied to pre-processed data."
+      echo "[cat12] Check that brain mode settings (APP=0) are being accepted (no 'No field' warnings above)."
+    fi
+    if grep -q "spm_kamap" "$LOGFILE"; then
+      echo "[cat12] Known error: spm_kamap not recognized by this CAT12 version."
+    fi
+    if grep -q "Failed: CAT12\|CAT Preprocessing error" "$LOGFILE"; then
+      echo "[cat12] CAT12 segmentation failed. See log: $LOGFILE"
+    fi
+    echo "[cat12] --- Last 30 lines of log ---"
+    tail -n 30 "$LOGFILE"
+  fi
+  exit 1
+fi
+
 echo "[cat12] Tissue maps produced successfully in $MRI_DIR"
 
-# some post-processing
+# ============================================================================
+# Post-processing
+# ============================================================================
 
 # handle err/ directory
 if [[ -d "${OUTPUT_DIR}/err" ]]; then
@@ -314,17 +358,15 @@ if [[ -d "${OUTPUT_DIR}/err" ]]; then
   rm -rf "${OUTPUT_DIR}/err"
 fi
 
-# for now dont convert to .nii.gz if input was gzipped
-# spm dislikes gzipped files
-
-# if [[ $INPUT_WAS_GZ -eq 1 ]]; then
-#   echo "[cat12] Converting output .nii -> .nii.gz"
-#   for f in "$MRI_DIR"/*.nii; do
-#     [[ -f "$f" ]] && gzip "$f"
-#   done
-#   # clean up the decompressed input
-#   rm -f "$NII_FILE"
-# fi
+# convert to .nii.gz if input was gzipped
+if [[ $INPUT_WAS_GZ -eq 1 ]]; then
+  echo "[cat12] Converting output .nii -> .nii.gz"
+  for f in "$MRI_DIR"/*.nii; do
+    [[ -f "$f" ]] && gzip "$f"
+  done
+  # clean up the decompressed input
+  rm -f "$NII_FILE"
+fi
 
 # copy header geometry from input to outputs
 if command -v fslcpgeom &>/dev/null; then
