@@ -1,212 +1,151 @@
 """
-pymp2rage command: computes clean T1w (UNIT1) and T1map from MP2RAGE inversions.
+pymp2rage command: compute T1w (UNIT1), T1map, and a brain mask from the
+MP2RAGE inversion components. Optionally applies B1 correction if a
+DREAM (or other) TB1map is provided.
 
-Optionally applies B1 correction using DREAM TB1map if available.
-Parameters come from code/mp2rage.json.
+Usage:
+  anatprep pymp2rage \\
+      --inv1-mag <FILE> --inv1-phase <FILE> \\
+      --inv2-mag <FILE> --inv2-phase <FILE> \\
+      [--b1map <FILE>] \\
+      [--out-dir <DIR>]
+
+Outputs (written to --out-dir, default CWD):
+  <prefix>_desc-pymp2rage_T1w.nii.gz
+  <prefix>_desc-pymp2rage_T1map.nii.gz
+  <prefix>_desc-pymp2rage_mask.nii.gz
+
+If --b1map is given, two additional outputs:
+  <prefix>_desc-pymp2rageb1corr_T1w.nii.gz
+  <prefix>_desc-pymp2rageb1corr_T1map.nii.gz
+
+<prefix> is derived from the BIDS entities (sub, ses, run) shared by
+the four inversion inputs. All inputs must agree on these entities.
+Reads acquisition parameters from code/mp2rage.yaml.
 """
 
 from pathlib import Path
 from typing import Optional
 
-from anatprep.commands import iter_sessions
 from anatprep.core import (
     setup_logging,
-    load_anatprep_config,
+    resolve_studydir,
     load_mp2rage_params,
-    check_outputs_exist,
+    check_consistent_entities,
+    bids_prefix,
+    input_stem,
+    check_output,
 )
-
-# to be updated to handle more kinds of b1 fieldmaps
-def _find_tb1map(sub, run: int, logger) -> Optional[Path]:
-    """
-    Find B1 fildmap for a given run.
-    
-    Looks in rawdata/sub-XX/ses-YY/fmap/ for files matching:
-        *_acq-dream_run-{run}_TB1map.nii.gz
-    
-    Returns None if not found.
-    """
-    if sub.fmap_dir is None or not sub.fmap_dir.exists():
-        logger.debug(f"No fmap directory found for {sub}")
-        return None
-    
-    pattern = f"*_acq-dream_run-{run}_TB1map.nii.gz"
-    matches = list(sub.fmap_dir.glob(pattern))
-    
-    if not matches:
-        pattern_norun = "*_acq-dream_TB1map.nii.gz"
-        matches_norun = list(sub.fmap_dir.glob(pattern_norun))
-        if matches_norun:
-            logger.warning(
-                f"No TB1map found for run-{run}, but found TB1map without run tag. "
-                f"B1 correction skipped for run-{run}."
-            )
-        return None
-    
-    if len(matches) > 1:
-        logger.warning(f"Multiple TB1maps found for run-{run}, using first: {matches[0].name}")
-    
-    return matches[0]
-
 
 
 def run_pymp2rage(
-    studydir: Path,
-    subject: str,
-    session: Optional[str] = None,
+    inv1_mag: Path,
+    inv1_phase: Path,
+    inv2_mag: Path,
+    inv2_phase: Path,
+    out_dir: Optional[Path] = None,
+    b1map: Optional[Path] = None,
     force: bool = False,
     verbose: bool = False,
 ) -> None:
-    """
-    Compute T1w and T1map from MP2RAGE inversions.
-    
-    If a DREAM TB1map is available (matched by run number), also produces
-    B1-corrected T1w and T1map outputs.
-    
-    Outputs
-    -------
-    For each run, produces in derivatives/anatprep/sub-XX/ses-YY/pymp2rage/:
-    
-    Always:
-        - sub-XX_ses-YY_run-{N}_desc-pymp2rage_T1w.nii.gz       (UNIT1 image)
-        - sub-XX_ses-YY_run-{N}_desc-pymp2rage_T1map.nii.gz     (quantitative T1)
-        - sub-XX_ses-YY_run-{N}_desc-pymp2rage_mask.nii.gz      (brain mask from INV2)
-    
-    If TB1map available for that run:
-        - sub-XX_ses-YY_run-{N}_desc-pymp2rageb1corr_T1w.nii.gz
-        - sub-XX_ses-YY_run-{N}_desc-pymp2rageb1corr_T1map.nii.gz
-    """
-    subjects = iter_sessions(studydir, subject, session)
+    inv1_mag = Path(inv1_mag).resolve()
+    inv1_phase = Path(inv1_phase).resolve()
+    inv2_mag = Path(inv2_mag).resolve()
+    inv2_phase = Path(inv2_phase).resolve()
+    b1map = Path(b1map).resolve() if b1map else None
 
-    mp2rage_params = load_mp2rage_params(studydir)
-    if mp2rage_params is None:
+    out_dir = Path(out_dir).resolve() if out_dir else Path.cwd()
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    logger = setup_logging("pymp2rage", verbose=verbose)
+
+    # Verify all four inversion inputs share sub/ses/run entities
+    inputs = [inv1_mag, inv1_phase, inv2_mag, inv2_phase]
+    try:
+        entities = check_consistent_entities(inputs)
+    except ValueError as e:
+        logger.error(str(e))
+        raise
+
+    prefix = bids_prefix(entities, fallback=input_stem(inv1_mag))
+    logger.info(f"Derived prefix: {prefix}")
+    if entities:
+        logger.info(f"  entities: {entities}")
+
+    # Output paths
+    t1w_out = out_dir / f"{prefix}_desc-pymp2rage_T1w.nii.gz"
+    t1map_out = out_dir / f"{prefix}_desc-pymp2rage_T1map.nii.gz"
+    mask_out = out_dir / f"{prefix}_desc-pymp2rage_mask.nii.gz"
+    t1w_b1_out = out_dir / f"{prefix}_desc-pymp2rageb1corr_T1w.nii.gz"
+    t1map_b1_out = out_dir / f"{prefix}_desc-pymp2rageb1corr_T1map.nii.gz"
+
+    need_basic = any(
+        check_output(p, logger, force) for p in (t1w_out, t1map_out, mask_out)
+    )
+    need_b1corr = (
+        b1map is not None
+        and any(check_output(p, logger, force) for p in (t1w_b1_out, t1map_b1_out))
+    )
+
+    if not need_basic and not need_b1corr:
+        logger.info("All outputs already exist. Nothing to do.")
+        return
+
+    # Acquisition parameters, still loaded from code/mp2rage.yaml
+    studydir = resolve_studydir()
+    params = load_mp2rage_params(studydir)
+    if params is None:
         raise RuntimeError(
-            "code/mp2rage.json not found or invalid.\n"
-            "This file is required for pymp2rage fitting."
+            "code/mp2rage.yaml not found or missing required keys. "
+            "Required: RepetitionTimeExcitation, RepetitionTimePreparation, "
+            "InversionTime, NumberShots, FlipAngle."
         )
 
     try:
         from anatprep.vendor.pymp2rage import MP2RAGE
-    except ImportError:
-        raise ImportError(
-            "Vendored pymp2rage not found in package installation.\n"
-        )
+    except ImportError as e:
+        raise ImportError("Vendored pymp2rage not found.") from e
 
-    for sub in subjects:
-        log_file = sub.log_dir / "pymp2rage.log"
-        logger = setup_logging("pymp2rage", log_file, verbose)
-        sub.ensure_deriv_dirs()
+    logger.info(f"Fitting MP2RAGE")
+    logger.info(f"  INV1 mag  : {inv1_mag.name}")
+    logger.info(f"  INV1 phase: {inv1_phase.name}")
+    logger.info(f"  INV2 mag  : {inv2_mag.name}")
+    logger.info(f"  INV2 phase: {inv2_phase.name}")
+    logger.info(f"  B1 map    : {b1map.name if b1map else '(none)'}")
+    logger.info(f"  Out dir   : {out_dir}")
 
-        runs = sub.get_mp2rage_runs()
-        logger.info(f"Processing {sub} - runs: {runs}")
+    fitter = MP2RAGE(
+        MPRAGE_tr=params["RepetitionTimePreparation"],
+        invtimesAB=params["InversionTime"],
+        flipangleABdegree=params["FlipAngle"],
+        nZslices=params["NumberShots"],
+        FLASH_tr=[
+            params["RepetitionTimeExcitation"],
+            params["RepetitionTimeExcitation"],
+        ],
+        inv1=str(inv1_mag),
+        inv1ph=str(inv1_phase),
+        inv2=str(inv2_mag),
+        inv2ph=str(inv2_phase),
+    )
 
-        for run in runs:
-            # output paths for base files
-            t1w_out = sub.deriv_path("pymp2rage", "T1w", run=run, subdir="pymp2rage")
-            t1map_out = sub.deriv_path("pymp2rage", "T1map", run=run, subdir="pymp2rage")
-            mask_out = sub.deriv_path("pymp2rage", "mask", run=run, subdir="pymp2rage")
-            
-            # output paths for b1 corrected ones
-            t1w_b1corr_out = sub.deriv_path("pymp2rageb1corr", "T1w", run=run, subdir="pymp2rage")
-            t1map_b1corr_out = sub.deriv_path("pymp2rageb1corr", "T1map", run=run, subdir="pymp2rage")
+    if need_basic:
+        fitter.fit_mask()
+        fitter.t1w_uni.to_filename(str(t1w_out))
+        fitter.t1map.to_filename(str(t1map_out))
+        fitter.mask.to_filename(str(mask_out))
+        logger.info(f"  --> {t1w_out.name}")
+        logger.info(f"  --> {t1map_out.name}")
+        logger.info(f"  --> {mask_out.name}")
 
-            # check if base files already exist
-            need_basic, _ = check_outputs_exist(
-                [t1w_out, t1map_out, mask_out], logger, force
-            )
-            
-            # check b1 map (matched by run)
-            tb1map_path = _find_tb1map(sub, run, logger)
-            
-            # check if b1-corrected outputs exists and b1map available
-            need_b1corr = False
-            if tb1map_path:
-                need_b1corr, _ = check_outputs_exist(
-                    [t1w_b1corr_out, t1map_b1corr_out], logger, force
-                )
-            
-            # skip if all exist
-            if not need_basic and not need_b1corr:
-                logger.debug(f"All outputs exist for run-{run}, skipping")
-                continue
-
-            # raw inversion images
-            try:
-                parts = sub.get_raw_mp2rage_parts(run)
-            except FileNotFoundError as e:
-                logger.error(f"Missing MP2RAGE files for run-{run}: {e}")
-                continue
-
-            logger.info(f"Fitting MP2RAGE run-{run}")
-            logger.info(f"  INV1 mag:   {parts['inv1_mag'].name}")
-            logger.info(f"  INV1 phase: {parts['inv1_phase'].name}")
-            logger.info(f"  INV2 mag:   {parts['inv2_mag'].name}")
-            logger.info(f"  INV2 phase: {parts['inv2_phase'].name}")
-            if tb1map_path:
-                logger.info(f"  TB1map:     {tb1map_path.name}")
-            else:
-                logger.info(f"  TB1map:     not found for run-{run} (B1 correction skipped)")
-
-            # mp2rage fitters
-            fitter_params = {
-                "MPRAGE_tr": mp2rage_params["RepetitionTimePreparation"],
-                "invtimesAB": mp2rage_params["InversionTime"],
-                "flipangleABdegree": mp2rage_params["FlipAngle"],
-                "nZslices": mp2rage_params["NumberShots"],
-                "FLASH_tr": [
-                    mp2rage_params["RepetitionTimeExcitation"],
-                    mp2rage_params["RepetitionTimeExcitation"],
-                ],
-                "inv1": str(parts["inv1_mag"]),
-                "inv1ph": str(parts["inv1_phase"]),
-                "inv2": str(parts["inv2_mag"]),
-                "inv2ph": str(parts["inv2_phase"]),
-            }
-
-            try:
-                # creates the object
-                fitter = MP2RAGE(**fitter_params)
-                
-                # base files
-                if need_basic:
-                    fitter.fit_mask()
-
-                    # output dir
-                    t1w_out.parent.mkdir(parents=True, exist_ok=True)
-
-                    # save base outputs
-                    fitter.t1w_uni.to_filename(str(t1w_out))
-                    fitter.t1map.to_filename(str(t1map_out))
-                    fitter.mask.to_filename(str(mask_out))
-
-                    logger.info(f"  --> T1w:   {t1w_out.name}")
-                    logger.info(f"  --> T1map: {t1map_out.name}")
-                    logger.info(f"  --> Mask:  {mask_out.name}")
-                else:
-                    logger.info(f"  Basic outputs exist, skipping")
-
-                # b1-correction if possible
-                if tb1map_path and need_b1corr:
-                    try:
-                        logger.info(f"  Applying B1 correction...")
-                        
-                        t1_corrected, t1w_corrected = fitter.correct_for_B1(str(tb1map_path))
-                        
-                        # save b1-corr outputs
-                        t1w_b1corr_out.parent.mkdir(parents=True, exist_ok=True)
-                        t1w_corrected.to_filename(str(t1w_b1corr_out))
-                        t1_corrected.to_filename(str(t1map_b1corr_out))
-                        
-                        logger.info(f"  --> T1w (B1-corr):   {t1w_b1corr_out.name}")
-                        logger.info(f"  --> T1map (B1-corr): {t1map_b1corr_out.name}")
-                        
-                    except Exception as e:
-                        logger.warning(f"  B1 correction failed: {e}")
-                        logger.warning(f"  Continuing with uncorrected outputs only")
-                        
-                elif tb1map_path and not need_b1corr:
-                    logger.info(f"  B1-corrected outputs exist, skipping B1 correction")
-
-            except Exception as e:
-                logger.error(f"pymp2rage fitting failed for run-{run}: {e}")
-                raise
+    if b1map and need_b1corr:
+        try:
+            logger.info("Applying B1 correction")
+            t1_corr, t1w_corr = fitter.correct_for_B1(str(b1map))
+            t1w_corr.to_filename(str(t1w_b1_out))
+            t1_corr.to_filename(str(t1map_b1_out))
+            logger.info(f"  --> {t1w_b1_out.name}")
+            logger.info(f"  --> {t1map_b1_out.name}")
+        except Exception as e:
+            logger.warning(f"B1 correction failed: {e}")
+            logger.warning("Continuing with uncorrected outputs only.")

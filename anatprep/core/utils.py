@@ -1,68 +1,46 @@
 """
 Shared utility functions for anatprep.
 
-Includes config-file discovery,
-logging setup, command runners, and common helpers.
+Includes config-file discovery, logging setup, command runners, BIDS
+entity extraction, and output-path helpers.
 """
 
-import json
 import logging
 import os
+import re
 import subprocess
 import sys
-import yaml
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
+
+import yaml
 
 
-# find config
+# ---------------------------------------------------------------------------
+# Config discovery
+# ---------------------------------------------------------------------------
 
 MAX_SEARCH_DEPTH = 4
 ANATPREP_CONFIG_NAME = "anatprep_config.yml"
-MP2RAGE_JSON_NAME = "mp2rage.json"
-
-
-def find_config_from_cwd(
-    config_name: str = ANATPREP_CONFIG_NAME,
-    max_depth: int = MAX_SEARCH_DEPTH,
-) -> Optional[Path]:
-    """
-    Search for code/<config_name> starting from CWD and traversing upward.
-
-    Also recognises the study directory by the presence of code/config.json
-    (from dcm2bids) if the anatprep config is not found.
-
-    Returns
-    -------
-    Path or None
-        Path to config file if found.
-    """
-    current = Path.cwd().resolve()
-
-    for _ in range(max_depth):
-        # prefer anatprep-specific config
-        anatprep_cfg = current / "code" / config_name
-        if anatprep_cfg.exists():
-            return anatprep_cfg
-
-        parent = current.parent
-        if parent == current:
-            break
-        current = parent
-
-    return None
+MP2RAGE_PARAMS_NAME = "mp2rage.yaml"
 
 
 def find_studydir_from_cwd(max_depth: int = MAX_SEARCH_DEPTH) -> Optional[Path]:
     """
-    Find the study directory by looking for code/config.json OR
-    code/anatprep_config.yml from CWD upward.
+    Find the study directory by walking upward from CWD.
+
+    Recognises a study by the presence of any of:
+        code/anatprep_config.yml
+        code/mp2rage.yaml
+        code/config.json      (dcm2bids config)
+        rawdata/
     """
     current = Path.cwd().resolve()
 
     for _ in range(max_depth):
         markers = [
             current / "code" / ANATPREP_CONFIG_NAME,
+            current / "code" / MP2RAGE_PARAMS_NAME,
             current / "code" / "config.json",
             current / "rawdata",
         ]
@@ -109,41 +87,33 @@ def resolve_studydir(explicit: Optional[Path] = None) -> Path:
 
 def load_anatprep_config(studydir: Path) -> Dict[str, Any]:
     """
-    Load code/anatprep_config.yml.
-
-    Returns empty dict (with a warning) if the file does not exist,
-    so that sensible defaults can be used downstream.
+    Load code/anatprep_config.yml. Returns {} if missing.
     """
     config_path = Path(studydir) / "code" / ANATPREP_CONFIG_NAME
-
     if not config_path.exists():
         return {}
-
     with open(config_path) as f:
-        data = yaml.safe_load(f) or {}
-
-    return data
+        return yaml.safe_load(f) or {}
 
 
 def load_mp2rage_params(studydir: Path) -> Optional[Dict[str, Any]]:
     """
-    Load MP2RAGE acquisition parameters from code/mp2rage.json.
+    Load MP2RAGE acquisition parameters from code/mp2rage.yaml.
 
-    This file is shared with dcm2bids and contains:
+    Expected keys:
         RepetitionTimeExcitation, RepetitionTimePreparation,
-        InversionTime (list[2]), NumberShots, FlipAngle (list[2]).
+        InversionTime (list[2]), NumberShots, FlipAngle (list[2])
 
-    Returns None if the file is missing or invalid.
+    Returns None if the file is missing or incomplete.
     """
-    mp2rage_json = Path(studydir) / "code" / MP2RAGE_JSON_NAME
-
-    if not mp2rage_json.exists():
+    params_path = Path(studydir) / "code" / MP2RAGE_PARAMS_NAME
+    if not params_path.exists():
         return None
 
     try:
-        with open(mp2rage_json) as f:
-            params = json.load(f)
-    except (json.JSONDecodeError, OSError):
+        with open(params_path) as f:
+            params = yaml.safe_load(f) or {}
+    except (yaml.YAMLError, OSError):
         return None
 
     required = [
@@ -160,11 +130,7 @@ def load_mp2rage_params(studydir: Path) -> Optional[Dict[str, Any]]:
 
 
 def config_get(config: Dict[str, Any], key: str, default: Any = None) -> Any:
-    """
-    Dot-separated key access into a nested dict.
-
-    >>> config_get(cfg, "tools.spm_path", "/opt/spm")
-    """
+    """Dot-separated key access into a nested dict."""
     keys = key.split(".")
     val = config
     try:
@@ -175,31 +141,25 @@ def config_get(config: Dict[str, Any], key: str, default: Any = None) -> Any:
     return val
 
 
-# logging
-
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
 
 def setup_logging(
     name: str,
     log_file: Optional[Path] = None,
     verbose: bool = False,
 ) -> logging.Logger:
-    """
-    Configure and return a logger.
-
-    Writes to *log_file* (DEBUG level) and to the console
-    (DEBUG if verbose, else INFO).
-    """
+    """Configure and return a logger."""
     logger = logging.getLogger(name)
     logger.setLevel(logging.DEBUG)
     logger.handlers.clear()
 
-    # console
     console = logging.StreamHandler(sys.stdout)
     console.setLevel(logging.DEBUG if verbose else logging.INFO)
     console.setFormatter(logging.Formatter("%(levelname)s - %(message)s"))
     logger.addHandler(console)
 
-    # file
     if log_file:
         log_file.parent.mkdir(parents=True, exist_ok=True)
         fh = logging.FileHandler(log_file)
@@ -210,8 +170,9 @@ def setup_logging(
     return logger
 
 
-# runs commands
-
+# ---------------------------------------------------------------------------
+# Command runner
+# ---------------------------------------------------------------------------
 
 def run_command(
     cmd: List[str],
@@ -252,37 +213,133 @@ def run_command(
     return result
 
 
-# helpers
+# ---------------------------------------------------------------------------
+# Filename helpers
+# ---------------------------------------------------------------------------
+
+def input_stem(path: Path) -> str:
+    """
+    Return the filename stem, handling the double extension ``.nii.gz``.
+
+    >>> input_stem(Path("sub-01_run-1_T1w.nii.gz"))
+    'sub-01_run-1_T1w'
+    """
+    name = Path(path).name
+    if name.endswith(".nii.gz"):
+        return name[:-7]
+    return Path(path).stem
 
 
-def check_outputs_exist(
-    output_files: List[Path],
+def default_output(
+    input_path: Path,
+    suffix: str,
+    outdir: Optional[Path] = None,
+    ext: str = ".nii.gz",
+) -> Path:
+    """
+    Build a default output path as ``<outdir>/<input_stem>_<suffix><ext>``.
+
+    If *outdir* is None, the current working directory is used.
+    """
+    outdir = Path(outdir) if outdir is not None else Path.cwd()
+    return outdir / f"{input_stem(input_path)}_{suffix}{ext}"
+
+
+def check_output(
+    output: Path,
     logger: logging.Logger,
     force: bool = False,
-) -> Tuple[bool, List[Path]]:
-    """Return (should_run, existing_files)."""
-    existing = [f for f in output_files if f.exists()]
-
-    if existing and not force:
-        logger.info(f"{len(existing)} output(s) already exist (use --force to overwrite)")
-        for f in existing[:5]:
-            logger.info(f"  - {f.name}")
-        return False, existing
-
-    return True, existing
+) -> bool:
+    """
+    Return True if the command should run, False if the output already exists
+    and force is False.
+    """
+    if output.exists() and not force:
+        logger.info(f"Output already exists (use --force to overwrite): {output}")
+        return False
+    return True
 
 
-def find_files(directory: Path, pattern: str, recursive: bool = False) -> List[Path]:
-    """Glob for files in *directory*."""
-    if not directory.exists():
-        return []
-    if recursive:
-        return sorted(directory.rglob(pattern))
-    return sorted(directory.glob(pattern))
+# ---------------------------------------------------------------------------
+# BIDS helpers
+# ---------------------------------------------------------------------------
+
+_BIDS_ENTITY_RE = {
+    "sub": re.compile(r"(?:^|_)sub-([a-zA-Z0-9]+)"),
+    "ses": re.compile(r"(?:^|_)ses-([a-zA-Z0-9]+)"),
+    "run": re.compile(r"(?:^|_)run-(\d+)"),
+}
 
 
-def get_docker_user_args() -> List[str]:
-    """Return --user UID:GID args for Docker."""
-    uid = os.getuid()
-    gid = os.getgid()
-    return ["--user", f"{uid}:{gid}"]
+def extract_bids_entities(path: Path) -> Dict[str, str]:
+    """
+    Extract BIDS entities (sub, ses, run) from a filename.
+
+    Missing entities are simply absent from the returned dict.
+    """
+    name = Path(path).name
+    result: Dict[str, str] = {}
+    for key, regex in _BIDS_ENTITY_RE.items():
+        m = regex.search(name)
+        if m:
+            result[key] = m.group(1)
+    return result
+
+
+def check_consistent_entities(
+    files: Sequence[Path],
+    entities: Sequence[str] = ("sub", "ses", "run"),
+) -> Dict[str, str]:
+    """
+    Verify that all *files* share the same value for each given entity.
+
+    An entity that is missing on one file but present on another counts as
+    an inconsistency. Entities absent from *all* files are simply skipped.
+
+    Returns the dict of shared entity values.
+
+    Raises
+    ------
+    ValueError
+        If any entity differs between inputs.
+    """
+    if not files:
+        return {}
+
+    per_file = [(Path(f), extract_bids_entities(f)) for f in files]
+    shared: Dict[str, str] = {}
+
+    for key in entities:
+        values = {ents.get(key) for _, ents in per_file}
+
+        if values == {None}:
+            continue  # entity not present anywhere
+
+        if len(values) > 1:
+            details = "\n".join(
+                f"  {f.name}: {key}={ents.get(key, '<missing>')}"
+                for f, ents in per_file
+            )
+            raise ValueError(
+                f"Input files have inconsistent '{key}' entity:\n{details}"
+            )
+
+        shared[key] = next(iter(values - {None}))
+
+    return shared
+
+
+def bids_prefix(entities: Dict[str, str], fallback: str) -> str:
+    """
+    Build a ``sub-XX[_ses-YY][_run-N]`` prefix from an entities dict.
+
+    Falls back to *fallback* if no ``sub`` entity is present.
+    """
+    parts = []
+    if "sub" in entities:
+        parts.append(f"sub-{entities['sub']}")
+    if "ses" in entities:
+        parts.append(f"ses-{entities['ses']}")
+    if "run" in entities:
+        parts.append(f"run-{entities['run']}")
+    return "_".join(parts) if parts else fallback

@@ -1,11 +1,17 @@
 """
-denoise command: removes background noise from T1w.
+denoise command: remove background noise from a T1w image.
 
-Applies the Heij / de Hollander formula using the SPM brain mask and
-the INV2 image to suppress the MP2RAGE background noise:
+Applies the Heij / de Hollander background removal formula using a
+brain mask and the INV2 image:
 
     new_t1w = t1w * mask * mean(inv2[mask==1] / max(inv2))
-            + t1w * inv2/max(inv2) * (1 - mask)
+            + t1w * (inv2 / max(inv2)) * (1 - mask)
+
+Usage:
+  anatprep denoise --t1w <T1W> --mask <MASK> --inv2 <INV2> [--out <OUTPUT>]
+
+If --out is omitted, the output is written to CWD as
+``<t1w_stem>_denoised.nii.gz``.
 """
 
 from pathlib import Path
@@ -13,126 +19,63 @@ from typing import Optional
 
 import nibabel as nib
 import numpy as np
-from nilearn import image
 
-from anatprep.commands import iter_sessions
 from anatprep.core import (
     setup_logging,
-    check_outputs_exist,
+    default_output,
+    check_output,
 )
 
 
 def run_denoise(
-    studydir: Path,
-    subject: str,
-    session: Optional[str] = None,
+    t1w: Path,
+    mask: Path,
+    inv2: Path,
+    out: Optional[Path] = None,
     force: bool = False,
     verbose: bool = False,
 ) -> None:
-    """Remove background noise from T1w using mask + INV2."""
-    subjects = iter_sessions(studydir, subject, session)
+    t1w = Path(t1w).resolve()
+    mask = Path(mask).resolve()
+    inv2 = Path(inv2).resolve()
 
-    for sub in subjects:
-        log_file = sub.log_dir / "denoise.log"
-        logger = setup_logging("denoise", log_file, verbose)
-        sub.ensure_deriv_dirs()
+    if out is None:
+        out = default_output(t1w, "denoised")
+    else:
+        out = Path(out).resolve()
 
-        runs = sub.get_mp2rage_runs()
-        logger.info(f"Processing {sub} - runs: {runs}")
+    out.parent.mkdir(parents=True, exist_ok=True)
 
-        for run in runs:
-            # pymp2rage T1w variants (standard and/or b1corr)
-            t1w_standard = sub.find_deriv_file(
-                "desc-pymp2rage_T1w", run=run, subdir="pymp2rage"
-            )
-            t1w_b1corr = sub.find_deriv_file(
-                "desc-pymp2rageb1corr_T1w", run=run, subdir="pymp2rage"
-            )
+    logger = setup_logging("denoise", verbose=verbose)
+    logger.info(f"T1w : {t1w}")
+    logger.info(f"Mask: {mask}")
+    logger.info(f"INV2: {inv2}")
+    logger.info(f"Out : {out}")
 
-            variants = []
-            if t1w_standard:
-                variants.append((t1w_standard, "denoised"))
-            if t1w_b1corr:
-                variants.append((t1w_b1corr, "denoisedb1corr"))
+    if not check_output(out, logger, force):
+        return
 
-            if not variants:
-                logger.error(
-                    f"No pymp2rage T1w found for run-{run}. "
-                    "Run 'anatprep pymp2rage' first."
-                )
-                continue
+    t1w_img = nib.load(str(t1w))
+    mask_img = nib.load(str(mask))
+    inv2_img = nib.load(str(inv2))
 
-            # the SPM brain mask (shared for all variants of this run)
-            mask_file = sub.find_deriv_file("desc-bet", run=run)
-            if mask_file is None:
-                mask_file = sub.find_deriv_file("desc-spmmask", run=run)
-            if mask_file is None:
-                logger.error(
-                    f"No INV2 brainmask not found for run-{run}. Run 'anatprep mask' first. "
-                )
-                continue
+    t1w_data = t1w_img.get_fdata().astype(np.float64)
+    mask_data = (mask_img.get_fdata() > 0).astype(np.float64)
+    inv2_data = inv2_img.get_fdata().astype(np.float64)
 
-            # raw INV2 (shared for all variants of this run)
-            try:
-                inv2_file = sub.get_raw_inv2(run)
-            except FileNotFoundError:
-                try:
-                    inv2_file = sub.get_rawdata_file("inv-2_part-mag_MP2RAGE", run)
-                except FileNotFoundError:
-                    logger.error(f"INV2 not found for run-{run}. Skipping.")
-                    continue
-
-            # process each T1w 
-            for t1w_file, out_desc in variants:
-                output = sub.deriv_path(out_desc, "T1w", run=run)
-
-                should_run, _ = check_outputs_exist([output], logger, force)
-                if not should_run:
-                    continue
-
-                logger.info(f"Denoising run-{run} ({out_desc})")
-                logger.info(f"  T1w:  {t1w_file.name}")
-                logger.info(f"  Mask: {mask_file.name}")
-                logger.info(f"  INV2: {inv2_file.name}")
-
-                _rm_background(t1w_file, mask_file, inv2_file, output)
-
-                if output.exists():
-                    logger.info(f"  Output: {output.name}")
-                else:
-                    logger.error(
-                        f"Denoised output was not produced for run-{run} ({out_desc})"
-                    )
-
-def _rm_background(
-    t1w_path: Path,
-    mask_path: Path,
-    inv2_path: Path,
-    output_path: Path,
-) -> None:
-    """
-    Apply the Heij/de Hollander background removal formula.
-
-    new_t1w = t1w * mask * mean(inv2[mask==1] / max(inv2))
-            + t1w * (inv2 / max(inv2)) * (1 - mask)
-    """
-    t1w_img = nib.load(str(t1w_path))
-    mask_img = nib.load(str(mask_path))
-    inv2_img = nib.load(str(inv2_path))
-
-    t1w = t1w_img.get_fdata().astype(np.float64)
-    mask = (mask_img.get_fdata() > 0).astype(np.float64)
-    inv2 = inv2_img.get_fdata().astype(np.float64)
-
-    inv2_max = np.max(inv2)
+    inv2_max = float(np.max(inv2_data))
     if inv2_max == 0:
-        raise ValueError("INV2 image has max intensity 0 - cannot denoise.")
+        raise ValueError("INV2 image has max intensity 0, cannot denoise.")
 
-    inv2_norm = inv2 / inv2_max
-    mean_inside = np.mean(inv2_norm[mask == 1]) if np.any(mask == 1) else 1.0
+    inv2_norm = inv2_data / inv2_max
+    mean_inside = (
+        float(np.mean(inv2_norm[mask_data == 1])) if np.any(mask_data == 1) else 1.0
+    )
 
-    new_t1w = t1w * mask * mean_inside + t1w * inv2_norm * (1 - mask)
+    new_t1w = (
+        t1w_data * mask_data * mean_inside
+        + t1w_data * inv2_norm * (1 - mask_data)
+    )
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    out_img = nib.Nifti1Image(new_t1w, t1w_img.affine, t1w_img.header)
-    out_img.to_filename(str(output_path))
+    nib.Nifti1Image(new_t1w, t1w_img.affine, t1w_img.header).to_filename(str(out))
+    logger.info(f"Denoised T1w written: {out.name}")

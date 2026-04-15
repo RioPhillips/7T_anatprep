@@ -213,7 +213,7 @@ matlabbatch{1}.spm.tools.cat.estwrite.extopts.surface.close_parahipp = 1;
 matlabbatch{1}.spm.tools.cat.estwrite.extopts.admin.experimental = 0;
 matlabbatch{1}.spm.tools.cat.estwrite.extopts.admin.new_release = 0;
 matlabbatch{1}.spm.tools.cat.estwrite.extopts.admin.lazy = 0;
-matlabbatch{1}.spm.tools.cat.estwrite.extopts.admin.ignoreErrors = 1;
+matlabbatch{1}.spm.tools.cat.estwrite.extopts.admin.ignoreErrors = 0;
 matlabbatch{1}.spm.tools.cat.estwrite.extopts.admin.verb = 2;
 matlabbatch{1}.spm.tools.cat.estwrite.extopts.admin.print = 2;
 
@@ -294,8 +294,8 @@ MATLAB_BATCH
 # ============================================================================
 
 echo "[cat12] Starting MATLAB..."
-"$MATLAB_CMD" -nodisplay -nosplash -batch "run('$SCRIPT')" > "$LOGFILE" 2>&1
-MATLAB_EXIT=$?
+"$MATLAB_CMD" -nodisplay -nosplash -batch "run('$SCRIPT')" 2>&1 | tee "$LOGFILE"
+MATLAB_EXIT=${PIPESTATUS[0]}
 
 # ============================================================================
 # Check results
@@ -340,8 +340,8 @@ if [[ $TISSUE_MAPS_OK -eq 0 ]]; then
     if grep -q "Failed: CAT12\|CAT Preprocessing error" "$LOGFILE"; then
       echo "[cat12] CAT12 segmentation failed. See log: $LOGFILE"
     fi
-    echo "[cat12] --- Last 30 lines of log ---"
-    tail -n 30 "$LOGFILE"
+    #echo "[cat12] --- Last 30 lines of log ---"
+    #tail -n 30 "$LOGFILE"
   fi
   exit 1
 fi

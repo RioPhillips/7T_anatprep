@@ -1,18 +1,13 @@
 """
 Main CLI for anatprep.
 
-Provides subcommands for each step of the anatomical preprocessing pipeline.
 """
 
 import click
 from pathlib import Path
 
 from anatprep import __version__
-from anatprep.core import resolve_studydir
 
-
-
-# click classes
 
 class HelpfulGroup(click.Group):
     """Show help when no command is given."""
@@ -24,279 +19,226 @@ class HelpfulGroup(click.Group):
         return super().invoke(ctx)
 
 
-# shared options info
-
-def common_options(f):
-    """Common options shared across subject-level commands."""
-    f = click.option(
-        "--studydir", "-s",
-        type=click.Path(exists=True, file_okay=False, path_type=Path),
-        default=None,
-        help="Path to BIDS study directory (default: auto-detect from CWD)",
-    )(f)
-    f = click.option(
-        "--subject", "-sub",
-        type=str,
-        required=True,
-        help="Subject ID (without sub- prefix)",
-    )(f)
-    f = click.option(
-        "--session", "-ses",
-        type=str,
-        default=None,
-        help="Session ID (without ses- prefix). If omitted, process all sessions.",
-    )(f)
-    f = click.option(
-        "--force", "-f",
-        is_flag=True,
-        default=False,
-        help="Force overwrite existing outputs",
-    )(f)
-    f = click.option(
-        "--verbose", "-v",
-        is_flag=True,
-        default=False,
-        help="Enable verbose output",
-    )(f)
-    return f
-
-
-# top-level group
-
 @click.group(cls=HelpfulGroup, context_settings=dict(help_option_names=["-h", "--help"]))
 @click.version_option(__version__)
 def cli():
     """
     anatprep: Anatomical preprocessing for 7T MP2RAGE data.
 
-    Takes BIDS rawdata (from dcm2bids) through SPM masking, pymp2rage
-    fitting, denoising, CAT12 segmentation, sinus masking, and iterative
-    brainmask refinement with fMRIprep.
+    \b
+    TYPICAL WORKFLOW (run per-subject, per-run):
+      1. anatprep pymp2rage    - T1w (UNIT1) + T1map from inversions
+      2. anatprep mask         - Brain mask from INV2 (--bet or --spm)
+      3. anatprep denoise      - Remove background noise
+      4. anatprep cat12        - CAT12 tissue segmentation
+      5. anatprep sinus-auto   - Auto-generate sinus exclusion mask
+      6. anatprep sinus-edit   - Manual refinement in ITK-Snap
 
     \b
-    SETUP:
-      1. Run dcm2bids first to produce rawdata/
-      2. Create code/anatprep_config.yml (see example in repo)
-      3. Ensure code/mp2rage.json exists
+    Commands read code/anatprep_config.yml and code/mp2rage.yaml from the
+    study directory when MATLAB or MP2RAGE
+    parameters are needed.
 
-    \b
-    TYPICAL WORKFLOW:
-      1. anatprep pymp2rage     - Compute T1w (UNIT1) + T1map
-      2. anatprep mask          - Brain mask from INV2 (--spm or --bet)
-      3. anatprep denoise       - Remove background noise
-      4. anatprep cat12         - CAT12 segmentation
-      5. anatprep sinus-auto    - Auto-generate sinus exclusion mask
-      6. anatprep sinus-edit    - Manual edit in ITK-Snap
-      7. anatprep fmriprep      - Run fMRIprep + FreeSurfer
-      8. anatprep status        - Check iteration status
-      9. anatprep brainmask-edit - Refine brainmask (ITK-Snap)
-     10. anatprep fmriprep      - Re-run with refined mask
-         ... repeat 8-10 until satisfied ...
-
-    \b
-    Use 'anatprep COMMAND --help' for command-specific help.
+    Use 'anatprep COMMAND --help' for details on each command.
     """
     pass
 
 
+_COMMON = [
+    click.option("--force", "-f", is_flag=True, help="Overwrite existing outputs."),
+    click.option("--verbose", "-v", is_flag=True, help="Verbose output."),
+]
+
+
+def _common_options(f):
+    for opt in reversed(_COMMON):
+        f = opt(f)
+    return f
+
+
+# ---------------------------------------------------------------------------
 # mask
+# ---------------------------------------------------------------------------
 
 @cli.command("mask", context_settings=dict(help_option_names=["-h", "--help"]))
-@common_options
-@click.option(
-    "--bet",
-    "method",
-    flag_value="bet",
-    default=True,
-    help="Use FSL BET for masking (default)"
-)
-@click.option(
-    "--spm",
-    "method",
-    flag_value="spm",
-    help="Use SPM segmantation for masking"
-)
-def mask(studydir, subject, session, force, verbose, method):
+@click.argument("input_image", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.argument("output_image", type=click.Path(dir_okay=False, path_type=Path), required=False)
+@click.option("--bet", "method", flag_value="bet", default=True,
+              help="FSL BET brain extraction (default).")
+@click.option("--spm", "method", flag_value="spm",
+              help="SPM segmentation via MATLAB.")
+@_common_options
+def mask_cmd(input_image, output_image, method, force, verbose):
     """
-    Create brain mask from INV2 image. Two methods are available:
+    Create a brain mask from an INV2 image.
 
     \b
-     --bet  FSL BET brain extraction.
-            Requires FSL (bet must be on PATH).
-            Uses: bet <INV2> <out> -f 0.3 -g 0.1 -m
-            Output: desc-bet_mask.nii.gz
-
-    \b
-     --spm  SPM segmentation via MATLAB.
-            Requires MATLAB and SPM. Set paths in code/anatprep_config.yml
-            Output: desc-spmmask_mask.nii.gz
-
-    Requires MATLAB and SPM. Set spm_path and matlab_cmd in
-    code/anatprep_config.yml.
+    INPUT_IMAGE   Source image (typically the INV2 magnitude).
+    OUTPUT_IMAGE  Destination mask. If omitted, written to CWD as
+                  <input_stem>_bet.nii.gz or <input_stem>_spmmask.nii.gz.
     """
-    studydir = resolve_studydir(studydir)
     from anatprep.commands.mask import run_mask
-    run_mask(studydir=studydir, subject=subject, session=session,
-                 force=force, verbose=verbose, method=method)
+    run_mask(input_image, output_image, method=method, force=force, verbose=verbose)
 
 
+# ---------------------------------------------------------------------------
 # pymp2rage
+# ---------------------------------------------------------------------------
 
 @cli.command("pymp2rage", context_settings=dict(help_option_names=["-h", "--help"]))
-@common_options
-def pymp2rage(studydir, subject, session, force, verbose):
+@click.option("--inv1-mag", required=True,
+              type=click.Path(exists=True, dir_okay=False, path_type=Path),
+              help="First inversion, magnitude.")
+@click.option("--inv1-phase", required=True,
+              type=click.Path(exists=True, dir_okay=False, path_type=Path),
+              help="First inversion, phase.")
+@click.option("--inv2-mag", required=True,
+              type=click.Path(exists=True, dir_okay=False, path_type=Path),
+              help="Second inversion, magnitude.")
+@click.option("--inv2-phase", required=True,
+              type=click.Path(exists=True, dir_okay=False, path_type=Path),
+              help="Second inversion, phase.")
+@click.option("--b1map",
+              type=click.Path(exists=True, dir_okay=False, path_type=Path),
+              default=None,
+              help="Optional DREAM TB1map for B1 correction.")
+@click.option("--out-dir",
+              type=click.Path(file_okay=False, path_type=Path),
+              default=None,
+              help="Output directory (default: CWD).")
+@_common_options
+def pymp2rage_cmd(inv1_mag, inv1_phase, inv2_mag, inv2_phase, b1map, out_dir,
+                  force, verbose):
     """
-    Compute clean T1w (UNIT1) and T1map from MP2RAGE inversions.
+    Compute T1w (UNIT1), T1map, and a brain mask from MP2RAGE inversions.
 
-    Uses pymp2rage with parameters from code/mp2rage.json.
+    All four inversion inputs must share the same sub/ses/run BIDS
+    entities; output filenames are derived from those. Reads acquisition
+    parameters from code/mp2rage.yaml.
     """
-    studydir = resolve_studydir(studydir)
     from anatprep.commands.pymp2rage import run_pymp2rage
-    run_pymp2rage(studydir=studydir, subject=subject, session=session,
-                  force=force, verbose=verbose)
+    run_pymp2rage(
+        inv1_mag=inv1_mag, inv1_phase=inv1_phase,
+        inv2_mag=inv2_mag, inv2_phase=inv2_phase,
+        out_dir=out_dir, b1map=b1map,
+        force=force, verbose=verbose,
+    )
 
 
+# ---------------------------------------------------------------------------
 # denoise
+# ---------------------------------------------------------------------------
 
 @cli.command("denoise", context_settings=dict(help_option_names=["-h", "--help"]))
-@common_options
-def denoise(studydir, subject, session, force, verbose):
+@click.option("--t1w", required=True,
+              type=click.Path(exists=True, dir_okay=False, path_type=Path),
+              help="T1w image to denoise.")
+@click.option("--mask", required=True,
+              type=click.Path(exists=True, dir_okay=False, path_type=Path),
+              help="Brain mask.")
+@click.option("--inv2", required=True,
+              type=click.Path(exists=True, dir_okay=False, path_type=Path),
+              help="INV2 magnitude image.")
+@click.option("--out",
+              type=click.Path(dir_okay=False, path_type=Path),
+              default=None,
+              help="Output path (default: <t1w_stem>_denoised.nii.gz in CWD).")
+@_common_options
+def denoise_cmd(t1w, mask, inv2, out, force, verbose):
     """
-    Remove background noise from T1w using SPM mask + INV2.
-
-    Applies the Heij/de Hollander background removal formula.
+    Remove MP2RAGE background noise using the Heij/de Hollander formula.
     """
-    studydir = resolve_studydir(studydir)
     from anatprep.commands.denoise import run_denoise
-    run_denoise(studydir=studydir, subject=subject, session=session,
+    run_denoise(t1w=t1w, mask=mask, inv2=inv2, out=out,
                 force=force, verbose=verbose)
 
 
+# ---------------------------------------------------------------------------
 # cat12
+# ---------------------------------------------------------------------------
 
 @cli.command("cat12", context_settings=dict(help_option_names=["-h", "--help"]))
-@common_options
-def cat12(studydir, subject, session, force, verbose):
+@click.argument("input_image", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.argument("output_dir", type=click.Path(file_okay=False, path_type=Path), required=False)
+@_common_options
+def cat12_cmd(input_image, output_dir, force, verbose):
     """
     Run CAT12 tissue segmentation via SPM/MATLAB.
 
-    Requires MATLAB, SPM, and CAT12 toolbox.
+    \b
+    INPUT_IMAGE   T1w image (typically denoised).
+    OUTPUT_DIR    Output directory (default: <cwd>/<input_stem>_cat12).
     """
-    studydir = resolve_studydir(studydir)
     from anatprep.commands.cat12 import run_cat12
-    run_cat12(studydir=studydir, subject=subject, session=session,
+    run_cat12(input_image=input_image, output_dir=output_dir,
               force=force, verbose=verbose)
 
 
+# ---------------------------------------------------------------------------
 # sinus-auto
+# ---------------------------------------------------------------------------
 
 @cli.command("sinus-auto", context_settings=dict(help_option_names=["-h", "--help"]))
-@common_options
-def sinus_auto(studydir, subject, session, force, verbose):
+@click.option("--t1w", required=True,
+              type=click.Path(exists=True, dir_okay=False, path_type=Path),
+              help="T1-weighted image.")
+@click.option("--flair", required=False, default=None,
+              type=click.Path(exists=True, dir_okay=False, path_type=Path),
+              help="FLAIR image (optional). If provided, a sinus-excluding mask is estimated.")
+@click.option("--mask", required=False, default=None,
+              type=click.Path(exists=True, dir_okay=False, path_type=Path),
+              help="Brain mask (from `anatprep mask`). Required when --flair is used.")
+@click.option("--out",
+              type=click.Path(dir_okay=False, path_type=Path),
+              default=None,
+              help="Output path (default: <t1w_stem>_sinusauto.nii.gz in CWD). "
+                   "The dilated version is written alongside as "
+                   "<out_stem>_dilated.nii.gz.")
+@_common_options
+def sinus_auto_cmd(t1w, flair, mask, out, force, verbose):
     """
-    Auto-generate sinus exclusion mask.
+    Generate a sagittal sinus exclusion mask.
 
-    If FLAIR exists: uses FLAIR ∩ T1w intersection.
-    Otherwise: intensity-based seed mask for manual editing.
+    If FLAIR is provided:
+        Uses FLAIR + brain mask to exclude the sinus automatically.
+
+    If FLAIR is NOT provided:
+        Falls back to BET on T1w (intended for manual editing).
     """
-    studydir = resolve_studydir(studydir)
     from anatprep.commands.sinus_auto import run_sinus_auto
-    run_sinus_auto(studydir=studydir, subject=subject, session=session,
-                   force=force, verbose=verbose)
 
+    # Enforce argument logic
+    if flair is not None and mask is None:
+        raise click.UsageError("--mask is required when --flair is provided.")
 
+    run_sinus_auto(
+        t1w=t1w,
+        flair=flair,
+        mask=mask,
+        out=out,
+        force=force,
+        verbose=verbose,
+    )
+
+# ---------------------------------------------------------------------------
 # sinus-edit
+# ---------------------------------------------------------------------------
 
 @cli.command("sinus-edit", context_settings=dict(help_option_names=["-h", "--help"]))
-@common_options
-def sinus_edit(studydir, subject, session, force, verbose):
+@click.argument("t1w", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.argument("mask", type=click.Path(dir_okay=False, path_type=Path))
+@click.option("--verbose", "-v", is_flag=True)
+def sinus_edit_cmd(t1w, mask, verbose):
     """
-    Open ITK-Snap for manual sinus mask editing.
+    Open ITK-Snap to edit a sinus mask manually.
 
-    Launches ITK-Snap with T1w as background and the auto sinus mask
-    as a segmentation overlay.
+    \b
+    T1W   Background image.
+    MASK  Mask to edit. Created as an empty mask if it does not exist.
     """
-    studydir = resolve_studydir(studydir)
     from anatprep.commands.sinus_edit import run_sinus_edit
-    run_sinus_edit(studydir=studydir, subject=subject, session=session,
-                   force=force, verbose=verbose)
+    run_sinus_edit(t1w=t1w, mask=mask, verbose=verbose)
 
-
-# fmriprep
-
-@cli.command("fmriprep", context_settings=dict(help_option_names=["-h", "--help"]))
-@common_options
-def fmriprep(studydir, subject, session, force, verbose):
-    """
-    Run fMRIprep + FreeSurfer via Docker.
-
-    Injects the current brainmask and sinus mask.
-    Increments the iteration counter.
-    """
-    studydir = resolve_studydir(studydir)
-    from anatprep.commands.fmriprep import run_fmriprep
-    run_fmriprep(studydir=studydir, subject=subject, session=session,
-                 force=force, verbose=verbose)
-
-
-# brainmask-edit
-
-@cli.command("brainmask-edit", context_settings=dict(help_option_names=["-h", "--help"]))
-@common_options
-def brainmask_edit(studydir, subject, session, force, verbose):
-    """
-    Open ITK-Snap to refine the brainmask.
-
-    Loads the fMRIprep/FreeSurfer brainmask for manual editing.
-    Advances the iteration counter after saving.
-    """
-    studydir = resolve_studydir(studydir)
-    from anatprep.commands.brainmask_edit import run_brainmask_edit
-    run_brainmask_edit(studydir=studydir, subject=subject, session=session,
-                       force=force, verbose=verbose)
-
-
-# status
-
-@cli.command("status", context_settings=dict(help_option_names=["-h", "--help"]))
-@click.option(
-    "--studydir", "-s",
-    type=click.Path(exists=True, file_okay=False, path_type=Path),
-    default=None,
-    help="Path to BIDS study directory (default: auto-detect from CWD)",
-)
-@click.option(
-    "--subject", "-sub",
-    type=str,
-    default=None,
-    help="Subject ID (without sub- prefix). Omit for overview of all subjects.",
-)
-@click.option(
-    "--session", "-ses",
-    type=str,
-    default=None,
-    help="Session ID (without ses- prefix).",
-)
-@click.option(
-    "--verbose", "-v",
-    is_flag=True,
-    default=False,
-    help="Show detailed status",
-)
-def status(studydir, subject, session, verbose):
-    """
-    Show pipeline status and configuration.
-
-    Without --subject: shows detected config and list of subjects.
-    With --subject: shows per-step completion and iteration state.
-    """
-    studydir = resolve_studydir(studydir)
-    from anatprep.commands.status import run_status
-    run_status(studydir=studydir, subject=subject, session=session,
-               verbose=verbose)
-
-
-# entry point
 
 def main():
     cli()

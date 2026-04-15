@@ -1,94 +1,53 @@
 """
-sinus-edit command: launches ITK-Snap for manual sagittal sinus mask editing.
+sinus-edit command: open ITK-Snap to edit a sinus mask manually.
 
-Opens ITK-Snap with the T1w as the main image and the auto-generated
-sinus mask as a segmentation overlay. The user edits the mask, saves,
-and closes ITK-Snap. The script then copies the result as the final
-sinus mask.
+Usage:
+  anatprep sinus-edit T1W MASK
+
+Loads T1W as the background image and MASK as a segmentation overlay.
+If MASK does not exist, an empty mask matching T1W is created first.
+Editing happens inside ITK-Snap; save (Ctrl+S) before closing.
 """
 
-import shutil
 import subprocess
 from pathlib import Path
-from typing import Optional
 
-import click
+import nibabel as nib
+import numpy as np
 
-from anatprep.commands import iter_sessions
 from anatprep.core import setup_logging
 
 
 def run_sinus_edit(
-    studydir: Path,
-    subject: str,
-    session: Optional[str] = None,
-    force: bool = False,
+    t1w: Path,
+    mask: Path,
     verbose: bool = False,
+    **_,  # accept force/etc from CLI without using them
 ) -> None:
-    subjects = iter_sessions(studydir, subject, session)
+    t1w = Path(t1w).resolve()
+    mask = Path(mask).resolve()
 
-    for sub in subjects:
-        log_file = sub.log_dir / "sinus_edit.log"
-        logger = setup_logging("sinus_edit", log_file, verbose)
-        sub.ensure_deriv_dirs()
+    logger = setup_logging("sinus_edit", verbose=verbose)
+    logger.info(f"T1w : {t1w}")
+    logger.info(f"Mask: {mask}")
 
-        runs = sub.get_mp2rage_runs()
+    if not t1w.exists():
+        raise FileNotFoundError(f"T1w image not found: {t1w}")
 
-        for run in runs:
-            # background image: denoised T1w or pymp2rage T1w
-            t1w = (
-                sub.find_deriv_file("desc-denoised", run=run)
-                or sub.find_deriv_file("desc-pymp2rage", run=run)
-            )
-            if t1w is None:
-                logger.error(f"No T1w found for run-{run}. Skipping.")
-                continue
+    if not mask.exists():
+        logger.info(f"Mask does not exist; creating empty mask at {mask}")
+        mask.parent.mkdir(parents=True, exist_ok=True)
+        ref = nib.load(str(t1w))
+        empty = np.zeros(ref.shape, dtype=np.uint8)
+        nib.Nifti1Image(empty, ref.affine, ref.header).to_filename(str(mask))
 
-            # auto sinus mask
-            auto_mask = sub.find_deriv_file("desc-sinusauto", run=run)
-            if auto_mask is None:
-                logger.warning(
-                    f"No auto sinus mask for run-{run}. "
-                    "Run 'anatprep sinus-auto' first, or editing from scratch."
-                )
+    logger.info("Launching ITK-Snap, edit the mask, save (Ctrl+S), then close.")
+    try:
+        subprocess.run(
+            ["itksnap", "-g", str(t1w), "-s", str(mask)],
+            check=False,
+        )
+    except FileNotFoundError:
+        raise RuntimeError("ITK-Snap not found. Install it or add it to PATH.")
 
-            # final sinus mask path 
-            final_mask = sub.deriv_path("sinusfinal", "mask", run=run)
-
-            # if final already exists and not force, use it as the overlay
-            if final_mask.exists() and not force:
-                logger.info(f"Final sinus mask exists for run-{run}. Using it as overlay.")
-                overlay = final_mask
-            elif auto_mask is not None:
-                # copy auto --> final as starting point
-                shutil.copy2(auto_mask, final_mask)
-                overlay = final_mask
-            else:
-                # create empty mask
-                import nibabel as nib
-                import numpy as np
-                ref = nib.load(str(t1w))
-                empty = np.zeros(ref.shape, dtype=np.uint8)
-                nib.Nifti1Image(empty, ref.affine, ref.header).to_filename(str(final_mask))
-                overlay = final_mask
-
-            logger.info(f"Launching ITK-Snap for run-{run}")
-            logger.info(f"  Background: {t1w.name}")
-            logger.info(f"  Overlay:    {overlay.name}")
-            logger.info("  Edit the sinus mask, save (Ctrl+S), and close ITK-Snap.")
-
-            # launch ITK-Snap (until user closes it
-            cmd = ["itksnap", "-g", str(t1w), "-s", str(overlay)]
-
-            try:
-                subprocess.run(cmd, check=False)
-            except FileNotFoundError:
-                logger.error(
-                    "ITK-Snap not found. Install it or add it to PATH."
-                )
-                return
-
-            if final_mask.exists():
-                logger.info(f"Sinus mask saved: {final_mask.name}")
-            else:
-                logger.warning("No sinus mask file found after editing.")
+    logger.info(f"Mask saved at: {mask}")
