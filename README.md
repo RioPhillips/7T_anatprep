@@ -36,10 +36,10 @@ anatprep expects the same study directory structure as 7T_BIDS_organiser:
 ```
 my_study/
 ├── code/
-│   ├── config.json              # dcm2bids config
+│   ├── bids7t_config.yml              # bids7t config
 │   ├── mp2rage.json             # MP2RAGE parameters
 │   └── anatprep_config.yml      # anatprep config
-├── rawdata/                     # BIDS rawdata from dcm2bids
+├── rawdata/                     # BIDS rawdata from bids7t
 │   └── sub-S01/
 │       └── ses-MR1/
 │           └── anat/
