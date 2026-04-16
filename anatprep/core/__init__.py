@@ -30,4 +30,5 @@ __all__ = [
     "extract_bids_entities",
     "check_consistent_entities",
     "bids_prefix",
+    "get_docker_user_args()"
 ]

@@ -343,3 +343,10 @@ def bids_prefix(entities: Dict[str, str], fallback: str) -> str:
     if "run" in entities:
         parts.append(f"run-{entities['run']}")
     return "_".join(parts) if parts else fallback
+
+
+def get_docker_user_args() -> List[str]:
+    # Return --user UID:GID args for Docker
+    uid = os.getuid()
+    gid = os.getgid()
+    return ["--user", f"{uid}:{gid}"]

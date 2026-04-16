@@ -143,14 +143,27 @@ def pymp2rage_cmd(inv1_mag, inv1_phase, inv2_mag, inv2_phase, b1map, out_dir,
               type=click.Path(dir_okay=False, path_type=Path),
               default=None,
               help="Output path (default: <t1w_stem>_denoised.nii.gz in CWD).")
+@click.option("--sanlm/--no-sanlm", default=True, 
+              help="Run CAT12 SANLM denoising (default: True).")
+@click.option("--bias/--no-bias", default=True, 
+              help="Run SPM bias field correction (default: True).")
 @_common_options
-def denoise_cmd(t1w, mask, inv2, out, force, verbose):
+def denoise_cmd(t1w, mask, inv2, out, sanlm, bias, force, verbose):
     """
-    Remove MP2RAGE background noise using the Heij/de Hollander formula.
+    Remove MP2RAGE background noise (Heij formula) and 
+    apply SANLM/SPM bias correction for 7T stability.
     """
     from anatprep.commands.denoise import run_denoise
-    run_denoise(t1w=t1w, mask=mask, inv2=inv2, out=out,
-                force=force, verbose=verbose)
+    run_denoise(
+        t1w=t1w, 
+        mask=mask, 
+        inv2=inv2, 
+        out=out,
+        run_sanlm=sanlm, 
+        run_bias=bias,
+        force=force, 
+        verbose=verbose
+    )
 
 
 # ---------------------------------------------------------------------------
