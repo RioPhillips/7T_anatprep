@@ -9,21 +9,13 @@ set -euo pipefail
 # Usage:
 #   cat12_batch.sh -s <SPM_PATH> -m <MATLAB_CMD> -i <INPUT_FILE> -o <OUTPUT_DIR> -l <LOG_DIR>
 #                  [--full]
-#
-# Options:
-#   -s  Path to SPM installation (must contain toolbox/cat12)
-#   -m  MATLAB command (default: matlab)
-#   -i  Input NIfTI (.nii or .nii.gz)
-#   -o  Output directory for CAT12 results
-#   -l  Log directory
-#   --full  Enable bias correction + SANLM filtering (for raw/unprocessed data)
 
 SPM_PATH=""
 MATLAB_CMD="matlab"
 INPUT_FILE=""
 OUTPUT_DIR=""
 LOG_DIR=""
-MODE="brain"  # default: no bias/SANLM for pre-processed data
+MODE="brain"
 
 usage() {
 cat <<EOF
@@ -61,14 +53,12 @@ mkdir -p "$OUTPUT_DIR" "$LOG_DIR"
 # Validate inputs
 # ============================================================================
 
-# Find CAT12 directory
 CAT12_DIR=$(find -L "$SPM_PATH" -type d -name "*cat12*" -print -quit 2>/dev/null)
 if [[ -z "$CAT12_DIR" ]]; then
   echo "[cat12] ERROR: CAT12 directory not found under $SPM_PATH"
   exit 1
 fi
 
-# Read CAT12 version for logging (not used for branching)
 VER="unknown"
 if [[ -f "$CAT12_DIR/Contents.txt" ]]; then
   VER=$(grep "Version" "$CAT12_DIR/Contents.txt" | cut -d" " -f3 2>/dev/null || echo "unknown")
@@ -82,13 +72,11 @@ echo "[cat12] Mode:           $MODE"
 echo "[cat12] Input:          $INPUT_FILE"
 echo "[cat12] Output:         $OUTPUT_DIR"
 
-# Check TPM exists
 if [[ ! -f "$SPM_PATH/tpm/TPM.nii" ]]; then
   echo "[cat12] ERROR: TPM.nii not found at $SPM_PATH/tpm/TPM.nii"
   exit 1
 fi
 
-# Check shooting template exists
 SHOOTING_TPM="${CAT12_DIR}/templates_MNI152NLin2009cAsym/Template_0_GS.nii"
 if [[ ! -f "$SHOOTING_TPM" ]]; then
   echo "[cat12] ERROR: Shooting template not found at $SHOOTING_TPM"
@@ -122,7 +110,6 @@ SCRIPT="${OUTPUT_DIR}/cat12_batch.m"
 echo "[cat12] MATLAB script:  $SCRIPT"
 echo "[cat12] Log file:       $LOGFILE"
 
-# Print image info
 if command -v fslinfo &>/dev/null; then
   dims=$(fslinfo "$NII_FILE" 2>/dev/null | grep -E "^dim[1-3]|^pixdim[1-3]" | awk '{print $2}' | tr '\n' ' ')
   echo "[cat12] Image info: $dims"
@@ -131,11 +118,6 @@ fi
 # ============================================================================
 # Mode-dependent parameters
 # ============================================================================
-
-# "brain" mode: data already preprocessed (B1-corrected, denoised)
-#   APP=0, NCstr=0, biasstr=eps, LASstr=0, gcutstr=0
-# "full" mode: raw/unprocessed data
-#   APP=1070, NCstr=2, biasstr=0.5, LASstr=0.75, gcutstr=2
 
 if [[ "$MODE" == "brain" ]]; then
   APP_VAL=0
@@ -213,7 +195,7 @@ matlabbatch{1}.spm.tools.cat.estwrite.extopts.surface.close_parahipp = 1;
 matlabbatch{1}.spm.tools.cat.estwrite.extopts.admin.experimental = 0;
 matlabbatch{1}.spm.tools.cat.estwrite.extopts.admin.new_release = 0;
 matlabbatch{1}.spm.tools.cat.estwrite.extopts.admin.lazy = 0;
-matlabbatch{1}.spm.tools.cat.estwrite.extopts.admin.ignoreErrors = 0;
+matlabbatch{1}.spm.tools.cat.estwrite.extopts.admin.ignoreErrors = 1;
 matlabbatch{1}.spm.tools.cat.estwrite.extopts.admin.verb = 2;
 matlabbatch{1}.spm.tools.cat.estwrite.extopts.admin.print = 2;
 
@@ -290,15 +272,17 @@ exit
 MATLAB_BATCH
 
 # ============================================================================
-# Run MATLAB
+# Run MATLAB (allow non-zero exit — we check tissue maps instead)
 # ============================================================================
 
 echo "[cat12] Starting MATLAB..."
+set +e
 "$MATLAB_CMD" -nodisplay -nosplash -batch "run('$SCRIPT')" 2>&1 | tee "$LOGFILE"
 MATLAB_EXIT=${PIPESTATUS[0]}
+set -e
 
 # ============================================================================
-# Check results
+# Check results (based on tissue maps, NOT MATLAB exit code)
 # ============================================================================
 
 MRI_DIR="${OUTPUT_DIR}/mri"
@@ -314,12 +298,44 @@ if [[ -d "$MRI_DIR" ]]; then
   fi
 fi
 
+if [[ $TISSUE_MAPS_OK -eq 0 ]]; then
+  echo "[cat12] ERROR: CAT12 did not produce tissue maps"
+  echo "[cat12] MATLAB exit code: $MATLAB_EXIT"
 
-echo "[cat12] Tissue maps produced successfully in $MRI_DIR"
+  if [[ -f "$LOGFILE" ]]; then
+    if grep -q "No field(s) named" "$LOGFILE"; then
+      echo "[cat12] ERROR: Batch field name mismatch."
+      echo "[cat12] The installed CAT12 version does not match r2043 field layout."
+    fi
+    if grep -q "Attempt to grow array along ambiguous dimension" "$LOGFILE"; then
+      echo "[cat12] Known error: cat_vol_morph dimension issue."
+      echo "[cat12] This can happen with unusual 7T image dimensions."
+    fi
+    if grep -q "logical indices contain a true value outside" "$LOGFILE"; then
+      echo "[cat12] Known error: logical indexing out of bounds."
+    fi
+    if grep -q "spm_kamap" "$LOGFILE"; then
+      echo "[cat12] Known error: spm_kamap not recognized by this CAT12 version."
+    fi
+    if grep -q "Failed: CAT12\|CAT Preprocessing error" "$LOGFILE"; then
+      echo "[cat12] CAT12 segmentation failed. See log: $LOGFILE"
+    fi
+    echo "[cat12] --- Last 30 lines of log ---"
+    tail -n 30 "$LOGFILE"
+  fi
+  exit 1
+fi
 
 # ============================================================================
-# Post-processing
+# Tissue maps exist — proceed with post-processing even if MATLAB crashed
+# during reporting/QC
 # ============================================================================
+
+if [[ $MATLAB_EXIT -ne 0 ]]; then
+  echo "[cat12] WARNING: MATLAB exited with code $MATLAB_EXIT but tissue maps exist."
+  echo "[cat12] WARNING: The crash likely occurred during QC/reporting (non-fatal)."
+  echo "[cat12] Proceeding with post-processing..."
+fi
 
 # handle err/ directory
 if [[ -d "${OUTPUT_DIR}/err" ]]; then
@@ -357,50 +373,5 @@ if [[ -d "${OUTPUT_DIR}/report" ]]; then
   cp "${OUTPUT_DIR}"/report/catreport* "$OUTPUT_DIR"/ 2>/dev/null || true
 fi
 
-# ============================================================================
-# Run MATLAB
-# ============================================================================
-
-echo "[cat12] Starting MATLAB..."
-set +e
-"$MATLAB_CMD" -nodisplay -nosplash -batch "run('$SCRIPT')" 2>&1 | tee "$LOGFILE"
-MATLAB_EXIT=${PIPESTATUS[0]}
-set -e
-
-# ============================================================================
-# Check results
-# ============================================================================
-
-MRI_DIR="${OUTPUT_DIR}/mri"
-TISSUE_MAPS_OK=0
-
-if [[ -d "$MRI_DIR" ]]; then
-  P1_COUNT=$(ls "$MRI_DIR"/p1*.nii* 2>/dev/null | wc -l)
-  P2_COUNT=$(ls "$MRI_DIR"/p2*.nii* 2>/dev/null | wc -l)
-  P3_COUNT=$(ls "$MRI_DIR"/p3*.nii* 2>/dev/null | wc -l)
-
-  if [[ $P1_COUNT -gt 0 && $P2_COUNT -gt 0 && $P3_COUNT -gt 0 ]]; then
-    TISSUE_MAPS_OK=1
-  fi
-fi
-
-if [[ $TISSUE_MAPS_OK -eq 1 ]]; then
-  if [[ $MATLAB_EXIT -ne 0 ]]; then
-    echo "[cat12] WARNING: CAT12 finished tissue maps but MATLAB returned exit code $MATLAB_EXIT"
-    echo "[cat12] WARNING: continuing because p1/p2/p3 maps exist"
-  else
-    echo "[cat12] Done --> $OUTPUT_DIR"
-    echo "[cat12] Log:  $LOGFILE"
-  fi
-else
-  echo "[cat12] ERROR: CAT12 did not produce tissue maps"
-  echo "[cat12] MATLAB exit code: $MATLAB_EXIT"
-  if [[ -f "$LOGFILE" ]]; then
-    echo "[cat12] --- Last 30 lines of log ---"
-    tail -n 30 "$LOGFILE"
-  fi
-  exit 1
-fi
-
-
-
+echo "[cat12] Done --> $OUTPUT_DIR"
+echo "[cat12] Log:  $LOGFILE"

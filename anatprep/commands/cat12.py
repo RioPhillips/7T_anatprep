@@ -5,7 +5,7 @@ Usage:
   anatprep cat12 INPUT [OUTPUT_DIR]
 
 INPUT is typically a denoised (optionally B1-corrected) T1w image.
-OUTPUT_DIR defaults to ``<cwd>/<input_stem>_cat12``.
+OUTPUT_DIR defaults to ``<cwd>/cat12``.
 
 Requires MATLAB + SPM + CAT12. Paths come from code/anatprep_config.yml.
 Expected outputs (in OUTPUT_DIR/mri/):
@@ -24,7 +24,6 @@ from anatprep.core import (
     config_get,
     resolve_studydir,
     run_command,
-    input_stem,
 )
 from anatprep.commands.mask import _find_script
 
@@ -56,7 +55,7 @@ def run_cat12(
     input_image = Path(input_image).resolve()
 
     if output_dir is None:
-        output_dir = Path.cwd() / f"cat12"
+        output_dir = Path.cwd() / "cat12"
     else:
         output_dir = Path(output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -98,7 +97,23 @@ def run_cat12(
         "-o", str(output_dir),
         "-l", str(log_dir),
     ]
-    run_command(cmd, logger)
+
+    try:
+        run_command(cmd, logger)
+    except RuntimeError:
+        # The bash script exits 1 only when tissue maps are truly missing.
+        # Double-check here to give a clear error message.
+        success, msg = _check_cat12_outputs(output_dir)
+        if success:
+            logger.warning(
+                f"CAT12 bash script returned error but tissue maps exist ({msg}). "
+                "The error likely occurred during QC/reporting."
+            )
+            return
+        raise RuntimeError(
+            f"CAT12 failed and did not produce tissue maps: {msg}. "
+            f"Check log: {log_dir / 'cat12.log'}"
+        )
 
     success, msg = _check_cat12_outputs(output_dir)
     if success:

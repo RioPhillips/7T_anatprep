@@ -82,6 +82,69 @@ def mask_cmd(input_image, output_image, method, force, verbose):
 
 
 # ---------------------------------------------------------------------------
+# nighres dura
+# ---------------------------------------------------------------------------
+@cli.command("nighres-dura", context_settings=dict(help_option_names=["-h", "--help"]))
+@click.argument("inv2", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.argument("brain_mask", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.argument("output_image", type=click.Path(dir_okay=False, path_type=Path), required=False)
+@click.option(
+    "--threshold",
+    type=float,
+    default=None,
+    help="Threshold applied to the dura probability map. Defaults to config value or 0.8.",
+)
+@_common_options
+def nighres_dura_cmd(inv2, brain_mask, output_image, threshold, force, verbose):
+    """
+    Estimate dura probability with Nighres and write a binary dura mask.
+
+    \b
+    INV2         Second inversion image.
+    BRAIN_MASK   Brain mask for the INV2 image.
+    OUTPUT_IMAGE Final binary dura mask. If omitted, defaults to <INV2>_dura_mask.nii.gz.
+    """
+    from anatprep.commands.nighres_dura import run_nighres_dura
+    run_nighres_dura(
+        inv2,
+        brain_mask,
+        output_image=output_image,
+        threshold=threshold,
+        force=force,
+        verbose=verbose,
+    )
+
+
+# ---------------------------------------------------------------------------
+# nighres skullstrip
+# ---------------------------------------------------------------------------
+@cli.command("nighres-skullstrip", context_settings=dict(help_option_names=["-h", "--help"]))
+@click.argument("inv2", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.argument("t1w", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.argument("t1map", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.argument("output_prefix", type=click.Path(dir_okay=False, path_type=Path), required=False)
+@_common_options
+def nighres_skullstrip_cmd(inv2, t1w, t1map, output_prefix, force, verbose):
+    """
+    Run Nighres MP2RAGE skullstripping.
+
+    \b
+    INV2          Second inversion image.
+    T1W           T1-weighted image.
+    T1MAP         T1 map image.
+    OUTPUT_PREFIX Prefix for outputs. If omitted, defaults to <INV2>_strip.
+    """
+    from anatprep.commands.nighres_skullstrip import run_nighres_skullstrip
+    run_nighres_skullstrip(
+        inv2,
+        t1w,
+        t1map,
+        output_prefix=output_prefix,
+        force=force,
+        verbose=verbose,
+    )
+
+# ---------------------------------------------------------------------------
 # pymp2rage
 # ---------------------------------------------------------------------------
 
