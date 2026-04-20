@@ -272,7 +272,12 @@ exit
 MATLAB_BATCH
 
 # ============================================================================
-# Run MATLAB (allow non-zero exit — we check tissue maps instead)
+# Run MATLAB
+#
+# we use set +e so that a non-zero MATLAB exit (e.g. from a
+# QC/reporting crash AFTER tissue maps have been written) does not kill
+# this script.  Success is determined by whether tissue maps exist, NOT
+# by MATLAB's exit code.
 # ============================================================================
 
 echo "[cat12] Starting MATLAB..."
@@ -282,7 +287,7 @@ MATLAB_EXIT=${PIPESTATUS[0]}
 set -e
 
 # ============================================================================
-# Check results (based on tissue maps, NOT MATLAB exit code)
+# Check results — based on tissue maps, NOT MATLAB exit code
 # ============================================================================
 
 MRI_DIR="${OUTPUT_DIR}/mri"
@@ -298,6 +303,7 @@ if [[ -d "$MRI_DIR" ]]; then
   fi
 fi
 
+#  genuine failure: no tissue maps 
 if [[ $TISSUE_MAPS_OK -eq 0 ]]; then
   echo "[cat12] ERROR: CAT12 did not produce tissue maps"
   echo "[cat12] MATLAB exit code: $MATLAB_EXIT"
@@ -326,11 +332,7 @@ if [[ $TISSUE_MAPS_OK -eq 0 ]]; then
   exit 1
 fi
 
-# ============================================================================
-# Tissue maps exist — proceed with post-processing even if MATLAB crashed
-# during reporting/QC
-# ============================================================================
-
+#  tissue maps exist: proceed with post-processing 
 if [[ $MATLAB_EXIT -ne 0 ]]; then
   echo "[cat12] WARNING: MATLAB exited with code $MATLAB_EXIT but tissue maps exist."
   echo "[cat12] WARNING: The crash likely occurred during QC/reporting (non-fatal)."
