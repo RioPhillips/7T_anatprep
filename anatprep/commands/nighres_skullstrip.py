@@ -6,7 +6,7 @@ from textwrap import dedent
 import shutil
 
 from anatprep.core import (
-    setup_logging,
+    setup_command_logging,
     default_output,
     check_output,
     load_anatprep_config,
@@ -59,7 +59,7 @@ def run_nighres_skullstrip(
 
     output_prefix.parent.mkdir(parents=True, exist_ok=True)
 
-    logger = setup_logging("nighres-skullstrip", verbose=verbose)
+    logger, log_dir = setup_command_logging("nighres-skullstrip", inv2, verbose=verbose)
 
     if not inv2.exists():
         raise FileNotFoundError(f"INV2 image not found: {inv2}")

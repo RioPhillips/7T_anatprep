@@ -15,7 +15,7 @@ from pathlib import Path
 import nibabel as nib
 import numpy as np
 
-from anatprep.core import setup_logging
+from anatprep.core import setup_command_logging
 
 
 def run_sinus_edit(
@@ -27,7 +27,7 @@ def run_sinus_edit(
     t1w = Path(t1w).resolve()
     mask = Path(mask).resolve()
 
-    logger = setup_logging("sinus_edit", verbose=verbose)
+    logger, log_dir = setup_command_logging("sinus-edit", t1w, verbose=verbose)
     logger.info(f"T1w : {t1w}")
     logger.info(f"Mask: {mask}")
 

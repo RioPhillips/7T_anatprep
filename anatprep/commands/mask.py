@@ -22,7 +22,7 @@ from uuid import uuid4
 from anatprep.core import (
     default_output,
     check_output,
-    setup_logging,
+    setup_command_logging,
     load_anatprep_config,
     config_get,
     resolve_studydir,
@@ -54,7 +54,7 @@ def run_mask(
 
     output_image.parent.mkdir(parents=True, exist_ok=True)
 
-    logger = setup_logging("mask", verbose=verbose)
+    logger, log_dir = setup_command_logging("mask", input_image, verbose=verbose)
     logger.info(f"Method: {'FSL BET' if method == 'bet' else 'SPM'}")
     logger.info(f"Input : {input_image}")
     logger.info(f"Output: {output_image}")
@@ -65,7 +65,7 @@ def run_mask(
     if method == "bet":
         _run_bet(input_image, output_image, logger)
     else:
-        _run_spm(input_image, output_image, logger)
+        _run_spm(input_image, output_image, logger, log_dir)
 
 
 # ---------------------------------------------------------------------------
@@ -116,7 +116,7 @@ def _run_bet(input_image: Path, output_image: Path, logger) -> None:
 # SPM backend
 # ---------------------------------------------------------------------------
 
-def _run_spm(input_image: Path, output_image: Path, logger) -> None:
+def _run_spm(input_image: Path, output_image: Path, logger, log_dir: Optional[Path] = None) -> None:
     studydir = resolve_studydir()
     config = load_anatprep_config(studydir)
     spm_path = config_get(config, "tools.spm_path")
@@ -129,7 +129,9 @@ def _run_spm(input_image: Path, output_image: Path, logger) -> None:
         )
 
     script = _find_script("spm_mask.sh")
-    log_dir = output_image.parent
+
+    # Use central log dir if available, otherwise fall back to output dir
+    matlab_log_dir = str(log_dir) if log_dir else str(output_image.parent)
 
     cmd = [
         "bash", str(script),
@@ -139,7 +141,7 @@ def _run_spm(input_image: Path, output_image: Path, logger) -> None:
         str(output_image),
     ]
 
-    env = {"LOG_DIR": str(log_dir)}
+    env = {"LOG_DIR": matlab_log_dir}
     run_command(cmd, logger, env=env)
 
     if not output_image.exists():

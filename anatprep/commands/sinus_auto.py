@@ -29,7 +29,7 @@ import nibabel as nib
 import numpy as np
 
 from anatprep.core import (
-    setup_logging,
+    setup_command_logging,
     default_output,
     check_output,
     run_command,
@@ -57,7 +57,7 @@ def run_sinus_auto(
     out.parent.mkdir(parents=True, exist_ok=True)
     out_dilated = out.parent / f"{input_stem(out)}_dilated.nii.gz"
 
-    logger = setup_logging("sinus_auto", verbose=verbose)
+    logger, log_dir = setup_command_logging("sinus-auto", t1w, verbose=verbose)
     logger.info(f"T1w        : {t1w}")
     logger.info(f"FLAIR      : {flair if flair is not None else 'None (fallback to T1w BET)'}")
     logger.info(f"Brain mask : {mask if mask is not None else 'None'}")

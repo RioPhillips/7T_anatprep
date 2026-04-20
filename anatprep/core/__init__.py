@@ -2,6 +2,9 @@
 
 from .utils import (
     setup_logging,
+    setup_command_logging,
+    resolve_log_dir,
+    copy_logs_to_central,
     run_command,
     check_output,
     resolve_studydir,
@@ -14,10 +17,14 @@ from .utils import (
     extract_bids_entities,
     check_consistent_entities,
     bids_prefix,
+    get_docker_user_args,
 )
 
 __all__ = [
     "setup_logging",
+    "setup_command_logging",
+    "resolve_log_dir",
+    "copy_logs_to_central",
     "run_command",
     "check_output",
     "resolve_studydir",
@@ -30,5 +37,5 @@ __all__ = [
     "extract_bids_entities",
     "check_consistent_entities",
     "bids_prefix",
-    "get_docker_user_args()"
+    "get_docker_user_args",
 ]

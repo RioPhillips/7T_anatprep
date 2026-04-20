@@ -10,6 +10,7 @@ import os
 import re
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -145,6 +146,56 @@ def config_get(config: Dict[str, Any], key: str, default: Any = None) -> Any:
 # Logging
 # ---------------------------------------------------------------------------
 
+def resolve_log_dir(studydir: Path, subject: str) -> Path:
+    """
+    Return the central log directory for a subject.
+
+    Path: <studydir>/derivatives/logs/anatprep/sub-<subject>/
+    """
+    log_dir = studydir / "derivatives" / "logs" / "anatprep" / f"sub-{subject}"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    return log_dir
+
+
+def setup_command_logging(
+    command_name: str,
+    input_path: Path,
+    verbose: bool = False,
+) -> Tuple[logging.Logger, Optional[Path]]:
+    """
+    Set up logging for a command with a central log file.
+
+    Extracts the subject from the input filename, resolves the study
+    directory, and writes a timestamped log to:
+        <studydir>/derivatives/logs/anatprep/sub-<subject>/<command>_<timestamp>.log
+
+    Returns (logger, log_dir). log_dir is None if the subject or study
+    directory could not be determined (logging still works on the console).
+    """
+    entities = extract_bids_entities(input_path)
+    subject = entities.get("sub")
+    log_dir = None
+    log_file = None
+
+    if subject:
+        try:
+            studydir = resolve_studydir()
+            log_dir = resolve_log_dir(studydir, subject)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            log_file = log_dir / f"{command_name}_{timestamp}.log"
+        except Exception:
+            pass
+
+    logger = setup_logging(command_name, log_file=log_file, verbose=verbose)
+
+    if log_file:
+        logger.info(f"Log file: {log_file}")
+    elif subject is None:
+        logger.debug("Could not extract subject from filename; no file log created.")
+
+    return logger, log_dir
+
+
 def setup_logging(
     name: str,
     log_file: Optional[Path] = None,
@@ -211,6 +262,30 @@ def run_command(
         raise RuntimeError(f"Command failed: {' '.join(cmd)}")
 
     return result
+
+
+# ---------------------------------------------------------------------------
+# Log copying helper
+# ---------------------------------------------------------------------------
+
+def copy_logs_to_central(source_dir: Path, central_log_dir: Path, prefix: str = "") -> None:
+    """
+    Copy .log files from source_dir into the central log directory.
+
+    Files are prefixed to avoid collisions.
+    """
+    import shutil
+
+    if not source_dir.exists() or central_log_dir is None:
+        return
+
+    for log_file in source_dir.glob("*.log"):
+        dest_name = f"{prefix}{log_file.name}" if prefix else log_file.name
+        dest = central_log_dir / dest_name
+        try:
+            shutil.copy2(str(log_file), str(dest))
+        except Exception:
+            pass
 
 
 # ---------------------------------------------------------------------------

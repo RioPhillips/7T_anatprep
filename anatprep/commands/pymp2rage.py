@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import Optional
 
 from anatprep.core import (
-    setup_logging,
+    setup_command_logging,
     resolve_studydir,
     load_mp2rage_params,
     check_consistent_entities,
@@ -57,7 +57,7 @@ def run_pymp2rage(
     out_dir = Path(out_dir).resolve() if out_dir else Path.cwd()
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    logger = setup_logging("pymp2rage", verbose=verbose)
+    logger, log_dir = setup_command_logging("pymp2rage", inv1_mag, verbose=verbose)
 
     # Verify all four inversion inputs share sub/ses/run entities
     inputs = [inv1_mag, inv1_phase, inv2_mag, inv2_phase]

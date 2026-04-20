@@ -19,11 +19,12 @@ from pathlib import Path
 from typing import Optional, Tuple
 
 from anatprep.core import (
-    setup_logging,
+    setup_command_logging,
     load_anatprep_config,
     config_get,
     resolve_studydir,
     run_command,
+    copy_logs_to_central,
 )
 from anatprep.commands.mask import _find_script
 
@@ -60,10 +61,7 @@ def run_cat12(
         output_dir = Path(output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    log_dir = output_dir / "logs"
-    log_dir.mkdir(parents=True, exist_ok=True)
-
-    logger = setup_logging("cat12", log_file=log_dir / "cat12.log", verbose=verbose)
+    logger, log_dir = setup_command_logging("cat12", input_image, verbose=verbose)
     logger.info(f"Input : {input_image}")
     logger.info(f"Output: {output_dir}")
 
@@ -88,6 +86,10 @@ def run_cat12(
     if not spm_path:
         raise RuntimeError("spm_path not set in code/anatprep_config.yml.")
 
+    # Use central log dir if available, otherwise fall back to output dir
+    cat12_log_dir = log_dir if log_dir else output_dir / "logs"
+    cat12_log_dir.mkdir(parents=True, exist_ok=True)
+
     script = _find_script("cat12_batch.sh")
     cmd = [
         "bash", str(script),
@@ -95,7 +97,7 @@ def run_cat12(
         "-m", str(matlab_cmd),
         "-i", str(input_image),
         "-o", str(output_dir),
-        "-l", str(log_dir),
+        "-l", str(cat12_log_dir),
     ]
 
     try:
@@ -112,8 +114,14 @@ def run_cat12(
             return
         raise RuntimeError(
             f"CAT12 failed and did not produce tissue maps: {msg}. "
-            f"Check log: {log_dir / 'cat12.log'}"
+            f"Check logs in: {cat12_log_dir}"
         )
+
+    # If cat12 wrote logs to output_dir/logs (fallback case) and we have
+    # a central log dir, copy them across
+    local_log_dir = output_dir / "logs"
+    if log_dir and local_log_dir.exists() and local_log_dir.resolve() != log_dir.resolve():
+        copy_logs_to_central(local_log_dir, log_dir, prefix="cat12_")
 
     success, msg = _check_cat12_outputs(output_dir)
     if success:
