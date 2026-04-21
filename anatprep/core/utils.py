@@ -343,6 +343,7 @@ _BIDS_ENTITY_RE = {
     "sub": re.compile(r"(?:^|_)sub-([a-zA-Z0-9]+)"),
     "ses": re.compile(r"(?:^|_)ses-([a-zA-Z0-9]+)"),
     "run": re.compile(r"(?:^|_)run-(\d+)"),
+    "desc": re.compile(r"(?:^|_)desc-([a-zA-Z0-9]+)"),  # NEW
 }
 
 
@@ -363,7 +364,7 @@ def extract_bids_entities(path: Path) -> Dict[str, str]:
 
 def check_consistent_entities(
     files: Sequence[Path],
-    entities: Sequence[str] = ("sub", "ses", "run"),
+    entities: Sequence[str] = ("sub", "ses", "run", "desc"),
 ) -> Dict[str, str]:
     """
     Verify that all *files* share the same value for each given entity.

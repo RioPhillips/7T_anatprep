@@ -38,17 +38,15 @@ from anatprep.core import (
 
 
 def _check_nighres() -> None:
-    """Raise with a helpful message if nighres is not importable."""
+    # raise with a helpful message if nighres is not importable
     try:
         import nighres  # noqa: F401
     except ImportError:
         raise RuntimeError(
             "The 'nighres' Python package is not installed or not on your "
             "PYTHONPATH.\n\n"
-            "To install nighres and its dependencies:\n"
-            "  pip install nighres psutil antspyx dipy\n\n"
-            "Or install via the anatprep extras:\n"
-            "  pip install 'anatprep[nighres]'\n\n"
+            "To install nighres and its dependencies, please see:\n"
+            "  https://nighres.readthedocs.io/en/latest/installation.htmln\n"
             "If you installed nighres manually, make sure your PYTHONPATH "
             "includes the directory containing the nighres package."
         )

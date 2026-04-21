@@ -19,8 +19,7 @@ B1 correction:
 
   1. Pre-registered B1 map:   pass only --b1map.
   2. Automatic registration:  pass both --b1map and --b1mag, where --b1mag
-     is the magnitude/FID companion of the B1 acquisition (e.g. the
-     ``_magnitude.nii.gz`` produced by a Philips DREAM sequence). The
+     is the magnitude/FID companion of the B1 acquisition. The
      magnitude image is registered to INV1 with FLIRT (6-DOF, mutual info)
      and the resulting transform is applied to the B1 map.
 
@@ -165,7 +164,7 @@ def run_pymp2rage(
 
     logger, log_dir = setup_command_logging("pymp2rage", inv1_mag, verbose=verbose)
 
-    # Verify all four inversion inputs share sub/ses/run entities
+    # Verify all four inversion inputs share sub/ses/run/desc entities
     inputs = [inv1_mag, inv1_phase, inv2_mag, inv2_phase]
     try:
         entities = check_consistent_entities(inputs)
@@ -173,17 +172,26 @@ def run_pymp2rage(
         logger.error(str(e))
         raise
 
+    # Pull out the condition tag (if any) — keep it out of the prefix
+    cond = entities.pop("desc", None)
+
     prefix = bids_prefix(entities, fallback=input_stem(inv1_mag))
     logger.info(f"Derived prefix: {prefix}")
+    if cond:
+        logger.info(f"  condition: {cond}")
     if entities:
         logger.info(f"  entities: {entities}")
 
+    # Build the desc portion of output filenames
+    desc_base = f"{cond}-pymp2rage" if cond else "pymp2rage"
+    desc_b1   = f"{cond}-pymp2rageb1corr" if cond else "pymp2rageb1corr"
+
     # Output paths
-    t1w_out = out_dir / f"{prefix}_desc-pymp2rage_T1w.nii.gz"
-    t1map_out = out_dir / f"{prefix}_desc-pymp2rage_T1map.nii.gz"
-    mask_out = out_dir / f"{prefix}_desc-pymp2rage_mask.nii.gz"
-    t1w_b1_out = out_dir / f"{prefix}_desc-pymp2rageb1corr_T1w.nii.gz"
-    t1map_b1_out = out_dir / f"{prefix}_desc-pymp2rageb1corr_T1map.nii.gz"
+    t1w_out      = out_dir / f"{prefix}_desc-{desc_base}_T1w.nii.gz"
+    t1map_out    = out_dir / f"{prefix}_desc-{desc_base}_T1map.nii.gz"
+    mask_out     = out_dir / f"{prefix}_desc-{desc_base}_mask.nii.gz"
+    t1w_b1_out   = out_dir / f"{prefix}_desc-{desc_b1}_T1w.nii.gz"
+    t1map_b1_out = out_dir / f"{prefix}_desc-{desc_b1}_T1map.nii.gz"
 
     need_basic = any(
         check_output(p, logger, force) for p in (t1w_out, t1map_out, mask_out)
