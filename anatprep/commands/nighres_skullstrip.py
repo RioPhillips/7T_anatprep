@@ -1,20 +1,49 @@
+"""
+nighres-skullstrip command: run Nighres MP2RAGE skullstripping.
+
+Usage:
+  anatprep nighres-skullstrip INV2 T1W T1MAP [OUTPUT_PREFIX]
+
+Produces four outputs under ``<prefix>_mask / _inv2 / _t1w / _t1map``.
+
+Requires the ``nighres`` Python package (plus its dependencies: psutil,
+antspyx, dipy).  Install with::
+
+    pip install nighres
+    pip install psutil antspyx dipy
+
+Or via the anatprep extras::
+
+    pip install "anatprep[nighres]"
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Optional
-from textwrap import dedent
 import shutil
 
 from anatprep.core import (
     setup_command_logging,
-    default_output,
     check_output,
-    load_anatprep_config,
-    config_get,
-    run_command,
-    resolve_studydir,
-    get_docker_user_args,
 )
+
+
+def _check_nighres() -> None:
+    """Raise with a helpful message if nighres is not importable."""
+    try:
+        import nighres  # noqa: F401
+    except ImportError:
+        raise RuntimeError(
+            "The 'nighres' Python package is not installed or not on your "
+            "PYTHONPATH.\n\n"
+            "To install nighres and its dependencies:\n"
+            "  pip install nighres psutil antspyx dipy\n\n"
+            "Or install via the anatprep extras:\n"
+            "  pip install 'anatprep[nighres]'\n\n"
+            "If you installed nighres manually, make sure your PYTHONPATH "
+            "includes the directory containing the nighres package."
+        )
 
 
 def run_nighres_skullstrip(
@@ -26,7 +55,7 @@ def run_nighres_skullstrip(
     verbose: bool = False,
 ) -> None:
     """
-    Run Nighres MP2RAGE skullstripping in Docker.
+    Run Nighres MP2RAGE skullstripping.
 
     Parameters
     ----------
@@ -37,17 +66,20 @@ def run_nighres_skullstrip(
     t1map
         T1 map image.
     output_prefix
-        Base prefix for outputs. If omitted, defaults to <inv2>_strip.
+        Base prefix for outputs.  If omitted, defaults to
+        ``<inv2_stem>_strip`` in the INV2 directory.
         Outputs will be:
-          <prefix>_mask.nii.gz
-          <prefix>_inv2.nii.gz
-          <prefix>_t1w.nii.gz
-          <prefix>_t1map.nii.gz
+          ``<prefix>_mask.nii.gz``
+          ``<prefix>_inv2.nii.gz``
+          ``<prefix>_t1w.nii.gz``
+          ``<prefix>_t1map.nii.gz``
     force
         Overwrite existing outputs.
     verbose
         Verbose logging.
     """
+    _check_nighres()
+
     inv2 = Path(inv2).resolve()
     t1w = Path(t1w).resolve()
     t1map = Path(t1map).resolve()
@@ -59,7 +91,9 @@ def run_nighres_skullstrip(
 
     output_prefix.parent.mkdir(parents=True, exist_ok=True)
 
-    logger, log_dir = setup_command_logging("nighres-skullstrip", inv2, verbose=verbose)
+    logger, log_dir = setup_command_logging(
+        "nighres-skullstrip", inv2, verbose=verbose
+    )
 
     if not inv2.exists():
         raise FileNotFoundError(f"INV2 image not found: {inv2}")
@@ -68,13 +102,6 @@ def run_nighres_skullstrip(
     if not t1map.exists():
         raise FileNotFoundError(f"T1map image not found: {t1map}")
 
-    studydir = resolve_studydir()
-    config = load_anatprep_config(studydir)
-
-    docker_image = config_get(
-        config, "tools.nighres.docker_image", "nighres/nighres:latest"
-    )
-
     outputs = _output_paths(output_prefix)
     sentinel = outputs["mask"]
 
@@ -82,7 +109,6 @@ def run_nighres_skullstrip(
     logger.info(f"Input T1w      : {t1w}")
     logger.info(f"Input T1map    : {t1map}")
     logger.info(f"Output prefix  : {output_prefix}")
-    logger.info(f"Docker image   : {docker_image}")
 
     if not check_output(sentinel, logger, force):
         return
@@ -92,19 +118,25 @@ def run_nighres_skullstrip(
             if p.exists():
                 p.unlink()
 
-    _run_docker_skullstrip(
-        inv2=inv2,
-        t1w=t1w,
-        t1map=t1map,
-        output_dir=output_prefix.parent,
+    #  run nighres
+    from nighres.brain import mp2rage_skullstripping
+
+    logger.info("Running Nighres MP2RAGE skullstripping...")
+    result = mp2rage_skullstripping(
+        str(inv2),
+        str(t1w),
+        str(t1map),
+        save_data=True,
+        output_dir=str(output_prefix.parent),
         file_name=output_prefix.name,
-        docker_image=docker_image,
-        logger=logger,
     )
 
+    # collect & rename outputs 
     found = _collect_nighres_outputs(output_prefix.parent, output_prefix.name)
 
-    missing = [key for key in outputs if key not in found or not found[key].exists()]
+    missing = [
+        key for key in outputs if key not in found or not found[key].exists()
+    ]
     if missing:
         raise RuntimeError(
             "Nighres skullstripping did not produce all expected outputs: "
@@ -118,91 +150,18 @@ def run_nighres_skullstrip(
                 dst.unlink()
             shutil.move(str(src), str(dst))
 
-    logger.info(f"Wrote skull mask : {outputs['mask'].name}")
-    logger.info(f"Wrote masked INV2: {outputs['inv2'].name}")
-    logger.info(f"Wrote masked T1w : {outputs['t1w'].name}")
+    logger.info(f"Wrote skull mask  : {outputs['mask'].name}")
+    logger.info(f"Wrote masked INV2 : {outputs['inv2'].name}")
+    logger.info(f"Wrote masked T1w  : {outputs['t1w'].name}")
     logger.info(f"Wrote masked T1map: {outputs['t1map'].name}")
 
 
-def _run_docker_skullstrip(
-    inv2: Path,
-    t1w: Path,
-    t1map: Path,
-    output_dir: Path,
-    file_name: str,
-    docker_image: str,
-    logger,
-) -> None:
-    if shutil.which("docker") is None:
-        raise RuntimeError("Docker not found in PATH.")
 
-    host_to_container = {}
-    volume_args = _build_docker_volumes(
-        [
-            (inv2.parent, False),
-            (t1w.parent, False),
-            (t1map.parent, False),
-            (output_dir, True),
-        ],
-        host_to_container,
-    )
-
-    inv2_c = _container_path(inv2, host_to_container)
-    t1w_c = _container_path(t1w, host_to_container)
-    t1map_c = _container_path(t1map, host_to_container)
-    out_c = host_to_container[output_dir.resolve()]
-
-    script = dedent(
-        f"""
-        from nighres.brain import mp2rage_skullstripping
-
-        mp2rage_skullstripping(
-            r"{inv2_c}",
-            r"{t1w_c}",
-            r"{t1map_c}",
-            file_name=r"{file_name}",
-            output_dir=r"{out_c}",
-            save_data=True,
-        )
-        """
-    ).strip()
-
-    cmd = [
-        "docker", "run", "--rm",
-        *get_docker_user_args(),
-        *volume_args,
-        docker_image,
-        "python", "-c", script,
-    ]
-
-    run_command(cmd, logger)
-
-
-def _build_docker_volumes(
-    mounts: list[tuple[Path, bool]],
-    host_to_container: dict[Path, Path],
-) -> list[str]:
-    unique: dict[Path, bool] = {}
-    for host_dir, writable in mounts:
-        host_dir = host_dir.resolve()
-        unique[host_dir] = unique.get(host_dir, False) or writable
-
-    volume_args: list[str] = []
-    for idx, (host_dir, writable) in enumerate(unique.items()):
-        container_dir = Path("/mnt") / f"vol{idx}"
-        host_to_container[host_dir] = container_dir
-        mode = "rw" if writable else "ro"
-        volume_args.extend(["--volume", f"{host_dir}:{container_dir}:{mode}"])
-
-    return volume_args
-
-
-def _container_path(path: Path, host_to_container: dict[Path, Path]) -> Path:
-    host_dir = path.resolve().parent
-    return host_to_container[host_dir] / path.name
+# Helpers
 
 
 def _stem_nii_gz(path: Path) -> str:
+    """Strip .nii.gz / .nii to get a filename stem."""
     name = path.name
     if name.endswith(".nii.gz"):
         return name[:-7]
@@ -212,16 +171,17 @@ def _stem_nii_gz(path: Path) -> str:
 
 
 def _output_paths(prefix: Path) -> dict[str, Path]:
-    base = prefix
+    """Expected output paths from the given prefix."""
     return {
-        "mask": base.with_name(f"{base.name}_mask.nii.gz"),
-        "inv2": base.with_name(f"{base.name}_inv2.nii.gz"),
-        "t1w": base.with_name(f"{base.name}_t1w.nii.gz"),
-        "t1map": base.with_name(f"{base.name}_t1map.nii.gz"),
+        "mask": prefix.with_name(f"{prefix.name}_mask.nii.gz"),
+        "inv2": prefix.with_name(f"{prefix.name}_inv2.nii.gz"),
+        "t1w": prefix.with_name(f"{prefix.name}_t1w.nii.gz"),
+        "t1map": prefix.with_name(f"{prefix.name}_t1map.nii.gz"),
     }
 
 
 def _collect_nighres_outputs(root: Path, base: str) -> dict[str, Path]:
+    """Find nighres outputs by glob patterns."""
     patterns = {
         "mask": [
             f"{base}*strip*mask*.nii.gz",

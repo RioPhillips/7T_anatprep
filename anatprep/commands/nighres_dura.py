@@ -1,8 +1,27 @@
+"""
+nighres-dura command: estimate dura mater probability with Nighres and
+write a binary dura mask.
+
+Usage:
+  anatprep nighres-dura INV2 BRAIN_MASK [OUTPUT_IMAGE] [--threshold T]
+
+Requires the ``nighres`` Python package (plus its dependencies: psutil,
+antspyx, dipy).  Install with::
+
+    pip install nighres
+    pip install psutil antspyx dipy
+
+Or via the anatprep extras::
+
+    pip install "anatprep[nighres]"
+
+Make sure the nighres package is importable in your current environment.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Optional
-from textwrap import dedent
 import shutil
 
 import nibabel as nib
@@ -14,10 +33,25 @@ from anatprep.core import (
     check_output,
     load_anatprep_config,
     config_get,
-    run_command,
     resolve_studydir,
-    get_docker_user_args,
 )
+
+
+def _check_nighres() -> None:
+    """Raise with a helpful message if nighres is not importable."""
+    try:
+        import nighres  # noqa: F401
+    except ImportError:
+        raise RuntimeError(
+            "The 'nighres' Python package is not installed or not on your "
+            "PYTHONPATH.\n\n"
+            "To install nighres and its dependencies:\n"
+            "  pip install nighres psutil antspyx dipy\n\n"
+            "Or install via the anatprep extras:\n"
+            "  pip install 'anatprep[nighres]'\n\n"
+            "If you installed nighres manually, make sure your PYTHONPATH "
+            "includes the directory containing the nighres package."
+        )
 
 
 def run_nighres_dura(
@@ -29,7 +63,7 @@ def run_nighres_dura(
     verbose: bool = False,
 ) -> None:
     """
-    Run Nighres MP2RAGE dura estimation in Docker and binarize the result.
+    Run Nighres MP2RAGE dura estimation and binarize the result.
 
     Parameters
     ----------
@@ -38,15 +72,19 @@ def run_nighres_dura(
     brain_mask
         Brain mask for the INV2 image.
     output_image
-        Final binary dura mask. If omitted, defaults to <inv2>_dura_mask.nii.gz.
+        Final binary dura mask. If omitted, defaults to
+        ``<inv2_stem>_dura_mask.nii.gz`` in the current directory.
     threshold
-        Threshold applied to the dura probability map. If omitted, read from config
-        (tools.nighres.dura_threshold) or default to 0.8.
+        Threshold applied to the dura probability map.  If omitted,
+        read from config (``tools.nighres.dura_threshold``) or default
+        to 0.8.
     force
         Overwrite existing output.
     verbose
         Verbose logging.
     """
+    _check_nighres()
+
     inv2 = Path(inv2).resolve()
     brain_mask = Path(brain_mask).resolve()
 
@@ -64,12 +102,10 @@ def run_nighres_dura(
     if not brain_mask.exists():
         raise FileNotFoundError(f"Brain mask not found: {brain_mask}")
 
+    # config 
     studydir = resolve_studydir()
     config = load_anatprep_config(studydir)
 
-    docker_image = config_get(
-        config, "tools.nighres.docker_image", "nighres/nighres:latest"
-    )
     if threshold is None:
         threshold = float(config_get(config, "tools.nighres.dura_threshold", 0.8))
 
@@ -80,7 +116,6 @@ def run_nighres_dura(
     logger.info(f"Output mask    : {output_image}")
     logger.info(f"Output proba   : {proba_image}")
     logger.info(f"Threshold      : {threshold}")
-    logger.info(f"Docker image   : {docker_image}")
 
     if not check_output(output_image, logger, force):
         return
@@ -90,19 +125,27 @@ def run_nighres_dura(
             if p.exists():
                 p.unlink()
 
-    _run_docker_dura(
-        inv2=inv2,
-        brain_mask=brain_mask,
-        output_dir=output_image.parent,
+    # run nighres 
+    from nighres.brain import mp2rage_dura_estimation
+
+    logger.info("Running Nighres MP2RAGE dura estimation...")
+    result = mp2rage_dura_estimation(
+        str(inv2),
+        str(brain_mask),
+        save_data=True,
+        output_dir=str(output_image.parent),
         file_name=_nighres_base_name(output_image),
-        docker_image=docker_image,
-        logger=logger,
     )
 
-    prob_file = _find_nighres_probability_file(output_image.parent, _nighres_base_name(output_image))
+    # locate probability output 
+    prob_file = _find_nighres_probability_file(
+        output_image.parent, _nighres_base_name(output_image)
+    )
     if prob_file is None or not prob_file.exists():
         raise RuntimeError("Nighres did not produce a dura probability file.")
 
+    # threshold -> binary mask 
+    logger.info(f"Thresholding probability map at {threshold}")
     prob_img = nib.load(str(prob_file))
     prob_data = prob_img.get_fdata()
 
@@ -111,95 +154,18 @@ def run_nighres_dura(
     dura_img.set_data_dtype(np.uint8)
     dura_img.to_filename(str(output_image))
 
-    # Keep the probability image too, under a predictable name.
-    if proba_image != prob_file:
+    # Keep the probability image under a predictable name
+    if proba_image.resolve() != prob_file.resolve():
         shutil.move(str(prob_file), str(proba_image))
 
-    logger.info(f"Wrote dura mask: {output_image.name}")
+    logger.info(f"Wrote dura mask : {output_image.name}")
     logger.info(f"Wrote proba map : {proba_image.name}")
 
 
-def _run_docker_dura(
-    inv2: Path,
-    brain_mask: Path,
-    output_dir: Path,
-    file_name: str,
-    docker_image: str,
-    logger,
-) -> None:
-    if shutil.which("docker") is None:
-        raise RuntimeError("Docker not found in PATH.")
-
-    host_to_container = {}
-    volume_args = _build_docker_volumes(
-        [
-            (inv2.parent, False),
-            (brain_mask.parent, False),
-            (output_dir, True),
-        ],
-        host_to_container,
-    )
-
-    inv2_c = _container_path(inv2, host_to_container)
-    mask_c = _container_path(brain_mask, host_to_container)
-    out_c = host_to_container[output_dir.resolve()]
-
-    script = dedent(
-        f"""
-        from nighres.brain import mp2rage_dura_estimation
-
-        mp2rage_dura_estimation(
-            r"{inv2_c}",
-            r"{mask_c}",
-            file_name=r"{file_name}",
-            output_dir=r"{out_c}",
-            save_data=True,
-        )
-        """
-    ).strip()
-
-    cmd = [
-        "docker", "run", "--rm",
-        *get_docker_user_args(),
-        *volume_args,
-        docker_image,
-        "python", "-c", script,
-    ]
-
-    run_command(cmd, logger)
-
-
-def _build_docker_volumes(
-    mounts: list[tuple[Path, bool]],
-    host_to_container: dict[Path, Path],
-) -> list[str]:
-    """
-    Build docker --volume arguments.
-
-    mounts: [(host_dir, writable), ...]
-    host_to_container: populated with {host_dir: container_dir}
-    """
-    unique: dict[Path, bool] = {}
-    for host_dir, writable in mounts:
-        host_dir = host_dir.resolve()
-        unique[host_dir] = unique.get(host_dir, False) or writable
-
-    volume_args: list[str] = []
-    for idx, (host_dir, writable) in enumerate(unique.items()):
-        container_dir = Path("/mnt") / f"vol{idx}"
-        host_to_container[host_dir] = container_dir
-        mode = "rw" if writable else "ro"
-        volume_args.extend(["--volume", f"{host_dir}:{container_dir}:{mode}"])
-
-    return volume_args
-
-
-def _container_path(path: Path, host_to_container: dict[Path, Path]) -> Path:
-    host_dir = path.resolve().parent
-    return host_to_container[host_dir] / path.name
-
+# Helpers
 
 def _nighres_base_name(path: Path) -> str:
+    # strip .nii.gz / .nii to get a base name for nighres ``file_name
     name = path.name
     if name.endswith(".nii.gz"):
         return name[:-7]
@@ -210,8 +176,10 @@ def _nighres_base_name(path: Path) -> str:
 
 def _paired_proba_path(output_mask: Path) -> Path:
     """
-    If output is ..._mask.nii.gz -> ..._proba.nii.gz
-    Otherwise -> <stem>_proba.nii.gz
+    Derive the probability-map path from the mask path.
+
+    ``..._mask.nii.gz`` → ``..._proba.nii.gz``, otherwise
+    ``<stem>_proba.nii.gz``.
     """
     name = output_mask.name
     if name.endswith("_mask.nii.gz"):
@@ -223,6 +191,7 @@ def _paired_proba_path(output_mask: Path) -> Path:
 
 
 def _find_nighres_probability_file(root: Path, base: str) -> Optional[Path]:
+    # find the Nighres dura probability output by glob pattern
     patterns = [
         f"{base}*dura*proba*.nii.gz",
         f"{base}*dura*prob*.nii.gz",
@@ -238,6 +207,4 @@ def _find_nighres_probability_file(root: Path, base: str) -> Optional[Path]:
     if not candidates:
         return None
 
-    # Prefer exact-looking matches first, otherwise just take the first sorted.
-    candidates = sorted(set(candidates))
-    return candidates[0]
+    return sorted(set(candidates))[0]
