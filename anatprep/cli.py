@@ -147,7 +147,6 @@ def nighres_skullstrip_cmd(inv2, t1w, t1map, output_prefix, force, verbose):
 # ---------------------------------------------------------------------------
 # pymp2rage
 # ---------------------------------------------------------------------------
-
 @cli.command("pymp2rage", context_settings=dict(help_option_names=["-h", "--help"]))
 @click.option("--inv1-mag", required=True,
               type=click.Path(exists=True, dir_okay=False, path_type=Path),
@@ -164,17 +163,25 @@ def nighres_skullstrip_cmd(inv2, t1w, t1map, output_prefix, force, verbose):
 @click.option("--b1map",
               type=click.Path(exists=True, dir_okay=False, path_type=Path),
               default=None,
-              help="Optional DREAM TB1map for B1 correction.")
+              help="Optional DREAM TB1map for B1 correction. If --b1mag is "
+                   "not also given, the map is assumed to be pre-registered "
+                   "to the MP2RAGE space.")
+@click.option("--b1mag",
+              type=click.Path(exists=True, dir_okay=False, path_type=Path),
+              default=None,
+              help="Magnitude/FID companion of the B1 acquisition (e.g. "
+                   "_magnitude.nii.gz from a DREAM sequence). When provided "
+                   "alongside --b1map, used to register the B1 map to INV1 "
+                   "space via FLIRT (6-DOF, mutual info). Requires FSL.")
 @click.option("--out-dir",
               type=click.Path(file_okay=False, path_type=Path),
               default=None,
               help="Output directory (default: CWD).")
 @_common_options
-def pymp2rage_cmd(inv1_mag, inv1_phase, inv2_mag, inv2_phase, b1map, out_dir,
-                  force, verbose):
+def pymp2rage_cmd(inv1_mag, inv1_phase, inv2_mag, inv2_phase, b1map, b1mag,
+                  out_dir, force, verbose):
     """
     Compute T1w (UNIT1), T1map, and a brain mask from MP2RAGE inversions.
-
     All four inversion inputs must share the same sub/ses/run BIDS
     entities; output filenames are derived from those. Reads acquisition
     parameters from code/mp2rage.yaml.
@@ -183,7 +190,7 @@ def pymp2rage_cmd(inv1_mag, inv1_phase, inv2_mag, inv2_phase, b1map, out_dir,
     run_pymp2rage(
         inv1_mag=inv1_mag, inv1_phase=inv1_phase,
         inv2_mag=inv2_mag, inv2_phase=inv2_phase,
-        out_dir=out_dir, b1map=b1map,
+        out_dir=out_dir, b1map=b1map, b1mag=b1mag,
         force=force, verbose=verbose,
     )
 
