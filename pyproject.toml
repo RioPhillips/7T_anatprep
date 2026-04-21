@@ -30,6 +30,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+nighres = [
+    "psutil",
+    "antspyx",
+    "dipy",
+]
 dev = [
     "pytest>=7.0",
     "pytest-cov",

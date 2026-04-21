@@ -12,4 +12,6 @@ dependencies:
   - pyyaml
   - matplotlib
   - pybids
-
+  - psutil
+  - antspyx
+  - dipy
