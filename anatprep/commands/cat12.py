@@ -7,7 +7,7 @@ Usage:
 INPUT is typically a denoised T1w image.
 OUTPUT_DIR defaults to ``<cwd>/cat12``.
 
-Requires MATLAB + SPM + CAT12. Paths come from code/anatprep_config.yml.
+Requires MATLAB + SPM + CAT12. Paths come from code/anatprep.yml.
 Expected outputs (in OUTPUT_DIR/mri/):
     p0*.nii  - tissue label image
     p1*.nii  - native GM probability
@@ -87,7 +87,7 @@ def run_cat12(
     matlab_cmd = config_get(config, "tools.matlab_cmd", "matlab")
 
     if not spm_path:
-        raise RuntimeError("spm_path not set in code/anatprep_config.yml.")
+        raise RuntimeError("spm_path not set in code/anatprep.yml.")
 
     # Use central log dir if available, otherwise fall back to output dir
     cat12_log_dir = log_dir if log_dir else output_dir / "logs"

@@ -226,7 +226,8 @@ def run_pymp2rage(
     logger.info(f"  INV2 mag  : {inv2_mag.name}")
     logger.info(f"  INV2 phase: {inv2_phase.name}")
     logger.info(f"  B1 map    : {b1map.name if b1map else '(none)'}")
-    logger.info(f"  B1 mag    : {b1mag.name if b1mag else '(none, assuming B1 pre-registered)'}")
+    if b1map:
+        logger.info(f"  B1 mag    : {b1mag.name if b1mag else '(none, assuming B1 pre-registered)'}")
     logger.info(f"  Out dir   : {out_dir}")
 
     fitter = MP2RAGE(

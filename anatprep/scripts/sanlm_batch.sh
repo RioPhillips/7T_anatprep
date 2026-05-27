@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Wrapper for SANLM and SPM Bias Correction
+# sanlm_batch.sh: SANLM denoising + optional SPM bias correction.
+# Supports both standalone (MCR) and regular MATLAB.
+
 function Usage {
     cat <<USAGE
 Usage: sanlm_batch.sh -s <spm_path> -m <matlab_cmd> -i <in.nii.gz> -o <out.nii.gz> [-n] [-b]
@@ -29,7 +31,19 @@ done
 
 mkdir -p "$(dirname "$OUTPUT")"
 
-# Setup Paths
+# ============================================================================
+# Detect MCR vs regular MATLAB
+# ============================================================================
+USE_MCR=0
+if [[ "$MATLAB_CMD" == *run_spm12.sh* ]] || \
+   [[ "$MATLAB_CMD" == *run_spm25.sh* ]] || \
+   [[ "$MATLAB_CMD" == *spm_mcr* ]]; then
+  USE_MCR=1
+fi
+
+# ============================================================================
+# Setup paths
+# ============================================================================
 TMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TMP_DIR"' EXIT
 
@@ -43,37 +57,49 @@ IN_NII="$TMP_DIR/input.nii"
 FINAL_NII="$TMP_DIR/final.nii"
 
 echo "[sanlm_bias] MATLAB cmd: $MATLAB_CMD"
+echo "[sanlm_bias] USE_MCR:    $USE_MCR"
 echo "[sanlm_bias] SPM path:   $SPM_PATH"
 echo "[sanlm_bias] Input:      $INPUT"
 echo "[sanlm_bias] Output:     $OUTPUT"
 echo "[sanlm_bias] Log file:   $LOGFILE"
 
-# MATLAB Logic
+# ============================================================================
+# Generate addpath block 
+# ============================================================================
+if [[ $USE_MCR -eq 1 ]]; then
+  ADDPATH_BLOCK="% MCR mode: SPM and CAT12 are bundled in the standalone — no addpath needed."
+else
+  ADDPATH_BLOCK="addpath('${SPM_PATH}');
+addpath(fullfile('${SPM_PATH}', 'toolbox', 'cat12'));"
+fi
+
+# ============================================================================
+# Generate MATLAB script
+# ============================================================================
 MLAB_FILE="$TMP_DIR/sanlm_bias_batch.m"
 cat > "$MLAB_FILE" <<MATLAB
 clear;
-addpath(genpath('$SPM_PATH'));
+${ADDPATH_BLOCK}
 spm('defaults','FMRI');
 spm_jobman('initcfg');
 
 current_file = '$IN_NII';
 
 if $DO_SANLM == 1
-    fprintf('--- Running SANLM ---\\n');
-    matlabbatch = [];
+    fprintf('--- Running SANLM (matlabbatch) ---\n');
+    clear matlabbatch;
     matlabbatch{1}.spm.tools.cat.tools.sanlm.data = {[current_file ',1']};
     matlabbatch{1}.spm.tools.cat.tools.sanlm.prefix = 'sanlm_';
     matlabbatch{1}.spm.tools.cat.tools.sanlm.NCstr = Inf;
     matlabbatch{1}.spm.tools.cat.tools.sanlm.rician = 0;
     spm_jobman('run', matlabbatch);
-
     [p,n,e] = fileparts(current_file);
     current_file = fullfile(p, ['sanlm_' n e]);
 end
 
 if $DO_BIAS == 1
-    fprintf('--- Running Bias Correction ---\\n');
-    matlabbatch = [];
+    fprintf('--- Running Bias Correction ---\n');
+    clear matlabbatch;
     matlabbatch{1}.spm.spatial.preproc.channel.vols = {[current_file ',1']};
     matlabbatch{1}.spm.spatial.preproc.channel.biasreg = 0.001;
     matlabbatch{1}.spm.spatial.preproc.channel.biasfwhm = 60;
@@ -127,9 +153,18 @@ movefile(current_file, '$FINAL_NII');
 exit(0);
 MATLAB
 
+# ============================================================================
+# Run MATLAB (branching on MCR vs full)
+# ============================================================================
 echo "[sanlm_bias] Starting MATLAB..."
-"$MATLAB_CMD" -nodisplay -nosplash -batch "run('$MLAB_FILE')" 2>&1 | tee "$LOGFILE"
+set +e
+if [[ $USE_MCR -eq 1 ]]; then
+  $MATLAB_CMD "$MLAB_FILE" 2>&1 | tee "$LOGFILE"
+else
+  "$MATLAB_CMD" -nodisplay -nosplash -batch "run('$MLAB_FILE')" 2>&1 | tee "$LOGFILE"
+fi
 MATLAB_EXIT=${PIPESTATUS[0]}
+set -e
 
 if [[ $MATLAB_EXIT -ne 0 ]]; then
     echo "[sanlm_bias] ERROR: MATLAB exited with status $MATLAB_EXIT"

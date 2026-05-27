@@ -1,14 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# cat12_batch.sh
-# CAT12 tissue segmentation via SPM/MATLAB for pre-processed 7T MP2RAGE.
-#
-# Targets CAT12 r2043 field layout exclusively.
-#
-# Usage:
-#   cat12_batch.sh -s <SPM_PATH> -m <MATLAB_CMD> -i <INPUT_FILE> -o <OUTPUT_DIR> -l <LOG_DIR>
-#                  [--full]
+# cat12_batch.sh: CAT12 tissue segmentation
+# the hope is to both standalone (MCR) and regular MATLAB.
+# Targets r2043+ field layout (compatible with standalone CAT12.9 / r2664).
 
 SPM_PATH=""
 MATLAB_CMD="matlab"
@@ -21,14 +16,6 @@ usage() {
 cat <<EOF
 Usage:
   cat12_batch.sh -s <SPM_PATH> -m <MATLAB_CMD> -i <INPUT_FILE> -o <OUTPUT_DIR> -l <LOG_DIR> [--full]
-
-Options:
-  -s, --spm      Path to SPM installation
-  -m, --matlab   MATLAB command (default: matlab)
-  -i, --input    Input NIfTI file (.nii or .nii.gz)
-  -o, --output   Output directory
-  -l, --logdir   Log directory
-  --full         Full processing mode (bias correction + SANLM). Default: brain-only.
 EOF
 exit 1
 }
@@ -50,14 +37,20 @@ done
 mkdir -p "$OUTPUT_DIR" "$LOG_DIR"
 
 # ============================================================================
-# Validate inputs
+# Detect MCR vs regular MATLAB
 # ============================================================================
-
-CAT12_DIR=$(find -L "$SPM_PATH" -type d -name "*cat12*" -print -quit 2>/dev/null)
-if [[ -z "$CAT12_DIR" ]]; then
-  echo "[cat12] ERROR: CAT12 directory not found under $SPM_PATH"
-  exit 1
+USE_MCR=0
+if [[ "$MATLAB_CMD" == *run_spm12.sh* ]] || \
+   [[ "$MATLAB_CMD" == *run_spm25.sh* ]] || \
+   [[ "$MATLAB_CMD" == *spm_mcr* ]]; then
+  USE_MCR=1
 fi
+
+# ============================================================================
+# Validate CAT12 install (look inside the bundled SPM for standalone)
+# ============================================================================
+CAT12_DIR=$(find -L "$SPM_PATH" -type d -name "*cat12*" -print -quit 2>/dev/null)
+[[ -z "$CAT12_DIR" ]] && { echo "[cat12] ERROR: CAT12 dir not found under $SPM_PATH"; exit 1; }
 
 VER="unknown"
 if [[ -f "$CAT12_DIR/Contents.txt" ]]; then
@@ -65,28 +58,24 @@ if [[ -f "$CAT12_DIR/Contents.txt" ]]; then
 fi
 
 echo "[cat12] MATLAB cmd:     $MATLAB_CMD"
+echo "[cat12] USE_MCR:        $USE_MCR"
 echo "[cat12] SPM path:       $SPM_PATH"
 echo "[cat12] CAT12 path:     $CAT12_DIR"
-echo "[cat12] CAT12 version:  $VER (script targets r2043 field layout)"
+echo "[cat12] CAT12 version:  $VER"
 echo "[cat12] Mode:           $MODE"
 echo "[cat12] Input:          $INPUT_FILE"
 echo "[cat12] Output:         $OUTPUT_DIR"
 
-if [[ ! -f "$SPM_PATH/tpm/TPM.nii" ]]; then
-  echo "[cat12] ERROR: TPM.nii not found at $SPM_PATH/tpm/TPM.nii"
-  exit 1
-fi
+# Check TPM
+[[ ! -f "$SPM_PATH/tpm/TPM.nii" ]] && { echo "[cat12] ERROR: TPM.nii not found"; exit 1; }
 
+# Modern CAT12 uses shooting registration (Template_0_GS.nii under templates_MNI152NLin2009cAsym)
 SHOOTING_TPM="${CAT12_DIR}/templates_MNI152NLin2009cAsym/Template_0_GS.nii"
-if [[ ! -f "$SHOOTING_TPM" ]]; then
-  echo "[cat12] ERROR: Shooting template not found at $SHOOTING_TPM"
-  exit 1
-fi
+[[ ! -f "$SHOOTING_TPM" ]] && { echo "[cat12] ERROR: Shooting template not found at $SHOOTING_TPM"; exit 1; }
 
 # ============================================================================
 # Handle gzip
 # ============================================================================
-
 INPUT_WAS_GZ=0
 if [[ "$INPUT_FILE" == *.gz ]]; then
   INPUT_WAS_GZ=1
@@ -99,10 +88,6 @@ else
     cp "$INPUT_FILE" "$NII_FILE"
   fi
 fi
-
-# ============================================================================
-# Log and script paths
-# ============================================================================
 
 LOGFILE="${LOG_DIR}/cat12_$(date +%Y%m%d_%H%M%S).log"
 SCRIPT="${OUTPUT_DIR}/cat12_batch.m"
@@ -118,35 +103,42 @@ fi
 # ============================================================================
 # Mode-dependent parameters
 # ============================================================================
-
 if [[ "$MODE" == "brain" ]]; then
   APP_VAL=0
   NCSTR_VAL=0
   BIASSTR_VAL="eps"
-  LASSTR_VAL="0"
-  GCUTSTR_VAL="0"
-  echo "[cat12] Brain mode: APP=0, NCstr=0, biasstr=eps (pre-processed input)"
+  LASSTR_VAL="0.5"
+  GCUTSTR_VAL="2"
+  echo "[cat12] Brain mode: APP=0, NCstr=0, biasstr=eps, LASstr=0.5, gcutstr=2"
 else
   APP_VAL=1070
   NCSTR_VAL=2
   BIASSTR_VAL="0.5"
-  LASSTR_VAL="0.75"
+  LASSTR_VAL="0.5"
   GCUTSTR_VAL="2"
   echo "[cat12] Full mode: APP=1070, NCstr=2, biasstr=0.5"
 fi
 
 # ============================================================================
-# Generate MATLAB batch (r2043 field layout)
+# Generate addpath block (only for regular MATLAB)
 # ============================================================================
+if [[ $USE_MCR -eq 1 ]]; then
+  ADDPATH_BLOCK="% MCR mode: SPM and CAT12 are bundled in the standalone — no addpath needed."
+else
+  ADDPATH_BLOCK="addpath('${SPM_PATH}');
+addpath(fullfile('${SPM_PATH}', 'toolbox', 'cat12'));"
+fi
 
+# ============================================================================
+# Generate MATLAB batch
+# ============================================================================
 cat > "$SCRIPT" <<MATLAB_BATCH
 %-----------------------------------------------------------------------------
-% CAT12 batch - auto-generated $(date)
-% CAT12 version: ${VER}, Mode: ${MODE}
-% Field layout: r2043 (segmentation sub-structure under extopts)
+% CAT12 batch (modern field layout) - auto-generated $(date)
+% CAT12 version: ${VER}, Mode: ${MODE}, MCR: ${USE_MCR}
 %-----------------------------------------------------------------------------
 clear;
-addpath(genpath('${SPM_PATH}'));
+${ADDPATH_BLOCK}
 
 matlabbatch{1}.spm.tools.cat.estwrite.data = {'${NII_FILE},1'};
 matlabbatch{1}.spm.tools.cat.estwrite.data_wmh = {''};
@@ -175,7 +167,7 @@ matlabbatch{1}.spm.tools.cat.estwrite.extopts.segmentation.WMHC = 0;
 matlabbatch{1}.spm.tools.cat.estwrite.extopts.segmentation.SLC = 0;
 matlabbatch{1}.spm.tools.cat.estwrite.extopts.segmentation.mrf = 1;
 
-% --- extopts.registration ---
+% --- extopts.registration (shooting) ---
 matlabbatch{1}.spm.tools.cat.estwrite.extopts.registration.regmethod.shooting.shootingtpm = {'${SHOOTING_TPM}'};
 matlabbatch{1}.spm.tools.cat.estwrite.extopts.registration.regmethod.shooting.regstr = 0.5;
 matlabbatch{1}.spm.tools.cat.estwrite.extopts.registration.vox = 1;
@@ -272,24 +264,24 @@ exit
 MATLAB_BATCH
 
 # ============================================================================
-# Run MATLAB
-#
-# we use set +e so that a non-zero MATLAB exit (e.g. from a
-# QC/reporting crash AFTER tissue maps have been written) does not kill
-# this script.  Success is determined by whether tissue maps exist, NOT
-# by MATLAB's exit code.
+# Run MATLAB (branching on MCR vs full)
 # ============================================================================
-
 echo "[cat12] Starting MATLAB..."
 set +e
-"$MATLAB_CMD" -nodisplay -nosplash -batch "run('$SCRIPT')" 2>&1 | tee "$LOGFILE"
+if [[ $USE_MCR -eq 1 ]]; then
+  # MCR: MATLAB_CMD is a multi-token string like "/path/run_spm25.sh /MCRROOT script"
+  # Intentional word splitting (no quotes around $MATLAB_CMD)
+  $MATLAB_CMD "$SCRIPT" 2>&1 | tee "$LOGFILE"
+else
+  # Regular MATLAB binary
+  "$MATLAB_CMD" -nodisplay -nosplash -batch "run('$SCRIPT')" 2>&1 | tee "$LOGFILE"
+fi
 MATLAB_EXIT=${PIPESTATUS[0]}
 set -e
 
 # ============================================================================
-# Check results — based on tissue maps, NOT MATLAB exit code
+# Check results
 # ============================================================================
-
 MRI_DIR="${OUTPUT_DIR}/mri"
 TISSUE_MAPS_OK=0
 
@@ -297,65 +289,42 @@ if [[ -d "$MRI_DIR" ]]; then
   P1_COUNT=$(ls "$MRI_DIR"/p1*.nii* 2>/dev/null | wc -l)
   P2_COUNT=$(ls "$MRI_DIR"/p2*.nii* 2>/dev/null | wc -l)
   P3_COUNT=$(ls "$MRI_DIR"/p3*.nii* 2>/dev/null | wc -l)
-
   if [[ $P1_COUNT -gt 0 && $P2_COUNT -gt 0 && $P3_COUNT -gt 0 ]]; then
     TISSUE_MAPS_OK=1
   fi
 fi
 
-#  genuine failure: no tissue maps 
 if [[ $TISSUE_MAPS_OK -eq 0 ]]; then
   echo "[cat12] ERROR: CAT12 did not produce tissue maps"
   echo "[cat12] MATLAB exit code: $MATLAB_EXIT"
-
   if [[ -f "$LOGFILE" ]]; then
-    if grep -q "No field(s) named" "$LOGFILE"; then
-      echo "[cat12] ERROR: Batch field name mismatch."
-      echo "[cat12] The installed CAT12 version does not match r2043 field layout."
-    fi
-    if grep -q "Attempt to grow array along ambiguous dimension" "$LOGFILE"; then
-      echo "[cat12] Known error: cat_vol_morph dimension issue."
-      echo "[cat12] This can happen with unusual 7T image dimensions."
-    fi
-    if grep -q "logical indices contain a true value outside" "$LOGFILE"; then
-      echo "[cat12] Known error: logical indexing out of bounds."
-    fi
-    if grep -q "spm_kamap" "$LOGFILE"; then
-      echo "[cat12] Known error: spm_kamap not recognized by this CAT12 version."
-    fi
-    if grep -q "Failed: CAT12\|CAT Preprocessing error" "$LOGFILE"; then
-      echo "[cat12] CAT12 segmentation failed. See log: $LOGFILE"
-    fi
     echo "[cat12] --- Last 30 lines of log ---"
     tail -n 30 "$LOGFILE"
   fi
   exit 1
 fi
 
-#  tissue maps exist: proceed with post-processing 
 if [[ $MATLAB_EXIT -ne 0 ]]; then
   echo "[cat12] WARNING: MATLAB exited with code $MATLAB_EXIT but tissue maps exist."
-  echo "[cat12] WARNING: The crash likely occurred during QC/reporting (non-fatal)."
-  echo "[cat12] Proceeding with post-processing..."
+  echo "[cat12] WARNING: Proceeding with post-processing..."
 fi
 
-# handle err/ directory
+# ============================================================================
+# Post-processing
+# ============================================================================
 if [[ -d "${OUTPUT_DIR}/err" ]]; then
   echo "[cat12] WARNING: CAT12 created an error directory (info in report)"
   rm -rf "${OUTPUT_DIR}/err"
 fi
 
-# convert to .nii.gz if input was gzipped
 if [[ $INPUT_WAS_GZ -eq 1 ]]; then
   echo "[cat12] Converting output .nii -> .nii.gz"
   for f in "$MRI_DIR"/*.nii; do
     [[ -f "$f" ]] && gzip "$f"
   done
-  # clean up the decompressed input
   rm -f "$NII_FILE"
 fi
 
-# copy header geometry from input to outputs
 if command -v fslcpgeom &>/dev/null; then
   echo "[cat12] Copying header geometry from input image"
   for f in "$MRI_DIR"/*; do
@@ -363,14 +332,12 @@ if command -v fslcpgeom &>/dev/null; then
   done
 fi
 
-# binary brain mask from p0 segmentation
 P0_IMG=$(find "$MRI_DIR" -name "p0*" -print -quit 2>/dev/null)
 if [[ -n "$P0_IMG" ]] && command -v fslmaths &>/dev/null; then
   echo "[cat12] Creating binary mask from p0 segmentation"
   fslmaths "$P0_IMG" -bin "$MRI_DIR/mask$(basename "$P0_IMG")"
 fi
 
-# copy cat report to output dir
 if [[ -d "${OUTPUT_DIR}/report" ]]; then
   cp "${OUTPUT_DIR}"/report/catreport* "$OUTPUT_DIR"/ 2>/dev/null || true
 fi

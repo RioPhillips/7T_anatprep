@@ -35,7 +35,7 @@ def cli():
       6. anatprep sinus-edit   - Manual refinement in ITK-Snap
 
     \b
-    Commands read code/anatprep_config.yml and code/mp2rage.yaml from the
+    Commands read code/anatprep.yml and code/mp2rage.yaml from the
     study directory when MATLAB or MP2RAGE
     parameters are needed.
 
@@ -321,6 +321,46 @@ def sinus_edit_cmd(t1w, mask, verbose):
     """
     from anatprep.commands.sinus_edit import run_sinus_edit
     run_sinus_edit(t1w=t1w, mask=mask, verbose=verbose)
+
+
+# ---------------------------------------------------------------------------
+# brainmask-edit
+# ---------------------------------------------------------------------------
+
+@cli.command("brainmask-edit", context_settings=dict(help_option_names=["-h", "--help"]))
+@click.argument("fs_subject_dir",
+                type=click.Path(exists=True, file_okay=False, path_type=Path))
+@click.option("--verbose", "-v", is_flag=True)
+def brainmask_edit_cmd(fs_subject_dir, verbose):
+    """
+    Open freeview to inspect/edit a FreeSurfer subject's brainmask and wm.
+
+    \b
+    FS_SUBJECT_DIR  Path to the FS subject directory, e.g.
+                    derivatives/freesurfer/sub-S01_ses-MR1
+    """
+    from anatprep.commands.brainmask_edit import run_brainmask_edit
+    run_brainmask_edit(fs_subject_dir=fs_subject_dir, verbose=verbose)
+
+@click.option("--parallel", is_flag=True, default=False,
+              help="Pass -parallel to recon-all (hemisphere-level parallelism). "
+                   "Doubles peak thread usage at lh/rh stages.")
+@_common_options
+def freesurfer_cmd(t1w, t2, subjects_dir, subject_id, edit, cpus, parallel, highres, force, verbose):
+    """..."""
+    from anatprep.commands.freesurfer import run_freesurfer
+    run_freesurfer(
+        t1w=t1w,
+        t2=t2,
+        subjects_dir=subjects_dir,
+        subject_id=subject_id,
+        edit=edit,
+        cpus=cpus,
+        parallel=parallel,
+        highres=highres,
+        force=force,
+        verbose=verbose,
+    )
 
 
 def main():

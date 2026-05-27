@@ -22,7 +22,7 @@ import yaml
 # ---------------------------------------------------------------------------
 
 MAX_SEARCH_DEPTH = 4
-ANATPREP_CONFIG_NAME = "anatprep_config.yml"
+ANATPREP_CONFIG_NAME = "anatprep.yml"
 MP2RAGE_PARAMS_NAME = "mp2rage.yaml"
 
 
@@ -31,9 +31,9 @@ def find_studydir_from_cwd(max_depth: int = MAX_SEARCH_DEPTH) -> Optional[Path]:
     Find the study directory by walking upward from CWD.
 
     Recognises a study by the presence of any of:
-        code/anatprep_config.yml
+        code/anatprep.yml
         code/mp2rage.yaml
-        code/config.json      (dcm2bids config)
+        code/config.json      (bids7t config)
         rawdata/
     """
     current = Path.cwd().resolve()
@@ -88,7 +88,7 @@ def resolve_studydir(explicit: Optional[Path] = None) -> Path:
 
 def load_anatprep_config(studydir: Path) -> Dict[str, Any]:
     """
-    Load code/anatprep_config.yml. Returns {} if missing.
+    Load code/anatprep.yml. Returns {} if missing.
     """
     config_path = Path(studydir) / "code" / ANATPREP_CONFIG_NAME
     if not config_path.exists():
@@ -201,7 +201,7 @@ def setup_logging(
     log_file: Optional[Path] = None,
     verbose: bool = False,
 ) -> logging.Logger:
-    """Configure and return a logger."""
+    # Configure and return a logger
     logger = logging.getLogger(name)
     logger.setLevel(logging.DEBUG)
     logger.handlers.clear()

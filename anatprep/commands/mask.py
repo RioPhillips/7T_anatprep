@@ -124,7 +124,7 @@ def _run_spm(input_image: Path, output_image: Path, logger, log_dir: Optional[Pa
 
     if not spm_path:
         raise RuntimeError(
-            "spm_path not set in code/anatprep_config.yml.\n"
+            "spm_path not set in code/anatprep.yml.\n"
             "Add:\n  tools:\n    spm_path: /path/to/spm"
         )
 

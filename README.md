@@ -38,7 +38,7 @@ my_study/
 ├── code/
 │   ├── bids7t_config.yml              # bids7t config
 │   ├── mp2rage.json             # MP2RAGE parameters
-│   └── anatprep_config.yml      # anatprep config
+│   └── anatprep.yml      # anatprep config
 ├── rawdata/                     # BIDS rawdata from bids7t
 │   └── sub-S01/
 │       └── ses-MR1/
@@ -49,7 +49,7 @@ my_study/
     └── freesurfer/
 ```
 
-### code/anatprep_config.yml
+### code/anatprep.yml
 
 ```yaml
 tools:
@@ -63,7 +63,7 @@ tools:
     mem_mb: 32000
 ```
 
-See `configs/example_anatprep_config.yml` for a full example.
+See `configs/example_anatprep.yml` for a full example.
 
 
 ## Usage
