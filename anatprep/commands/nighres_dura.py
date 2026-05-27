@@ -176,7 +176,7 @@ def _paired_proba_path(output_mask: Path) -> Path:
     """
     Derive the probability-map path from the mask path.
 
-    ``..._mask.nii.gz`` → ``..._proba.nii.gz``, otherwise
+    ``..._mask.nii.gz`` --> ``..._proba.nii.gz``, otherwise
     ``<stem>_proba.nii.gz``.
     """
     name = output_mask.name

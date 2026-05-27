@@ -92,7 +92,7 @@ def _register_b1(
     mag_reg = out_dir / f"{b1mag_stem}_space-inv1.nii.gz"
     b1_reg = out_dir / f"{prefix}_desc-reg_TB1map.nii.gz"
 
-    # --- step 1: estimate transform (magnitude → INV1) --------------------
+    # --- step 1: estimate transform (magnitude --> INV1) --------------------
     have_cached = mag_reg.exists() and xfm_mat.exists()
     if have_cached and not force:
         logger.info(f"Reusing cached B1-mag registration: {xfm_mat.name}")

@@ -157,12 +157,11 @@ matlabbatch{1}.spm.tools.cat.estwrite.extopts.segmentation.setCOM = 1;
 matlabbatch{1}.spm.tools.cat.estwrite.extopts.segmentation.APP = ${APP_VAL};
 matlabbatch{1}.spm.tools.cat.estwrite.extopts.segmentation.affmod = 0;
 matlabbatch{1}.spm.tools.cat.estwrite.extopts.segmentation.NCstr = ${NCSTR_VAL};
-matlabbatch{1}.spm.tools.cat.estwrite.extopts.segmentation.spm_kamap = 0;
 matlabbatch{1}.spm.tools.cat.estwrite.extopts.segmentation.LASstr = ${LASSTR_VAL};
 matlabbatch{1}.spm.tools.cat.estwrite.extopts.segmentation.LASmyostr = 0;
 matlabbatch{1}.spm.tools.cat.estwrite.extopts.segmentation.gcutstr = ${GCUTSTR_VAL};
 matlabbatch{1}.spm.tools.cat.estwrite.extopts.segmentation.cleanupstr = 0.5;
-matlabbatch{1}.spm.tools.cat.estwrite.extopts.segmentation.BVCstr = 0.5;
+matlabbatch{1}.spm.tools.cat.estwrite.extopts.segmentation.BVCstr = 0;
 matlabbatch{1}.spm.tools.cat.estwrite.extopts.segmentation.WMHC = 0;
 matlabbatch{1}.spm.tools.cat.estwrite.extopts.segmentation.SLC = 0;
 matlabbatch{1}.spm.tools.cat.estwrite.extopts.segmentation.mrf = 1;
@@ -170,12 +169,12 @@ matlabbatch{1}.spm.tools.cat.estwrite.extopts.segmentation.mrf = 1;
 % --- extopts.registration (shooting) ---
 matlabbatch{1}.spm.tools.cat.estwrite.extopts.registration.regmethod.shooting.shootingtpm = {'${SHOOTING_TPM}'};
 matlabbatch{1}.spm.tools.cat.estwrite.extopts.registration.regmethod.shooting.regstr = 0.5;
-matlabbatch{1}.spm.tools.cat.estwrite.extopts.registration.vox = 1;
+matlabbatch{1}.spm.tools.cat.estwrite.extopts.registration.vox = 1.5;
 matlabbatch{1}.spm.tools.cat.estwrite.extopts.registration.bb = 12;
 
 % --- extopts.surface ---
 matlabbatch{1}.spm.tools.cat.estwrite.extopts.surface.pbtres = 0.5;
-matlabbatch{1}.spm.tools.cat.estwrite.extopts.surface.pbtmethod = 'pbt2x';
+matlabbatch{1}.spm.tools.cat.estwrite.extopts.surface.pbtmethod = 'pbtsimple';
 matlabbatch{1}.spm.tools.cat.estwrite.extopts.surface.SRP = 22;
 matlabbatch{1}.spm.tools.cat.estwrite.extopts.surface.reduce_mesh = 1;
 matlabbatch{1}.spm.tools.cat.estwrite.extopts.surface.vdist = 2;
