@@ -21,7 +21,7 @@ import yaml
 # Config discovery
 # ---------------------------------------------------------------------------
 
-MAX_SEARCH_DEPTH = 4
+MAX_SEARCH_DEPTH = 8
 ANATPREP_CONFIG_NAME = "anatprep.yml"
 MP2RAGE_PARAMS_NAME = "mp2rage.yaml"
 
