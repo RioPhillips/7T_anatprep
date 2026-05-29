@@ -313,7 +313,7 @@ def sinus_auto_cmd(t1w, flair, mask, out, force, verbose):
 @click.option("--verbose", "-v", is_flag=True)
 def sinus_edit_cmd(t1w, mask, verbose):
     """
-    Open ITK-Snap to edit a sinus mask manually.
+    Open FreeView or ITK-Snap to edit a sinus mask manually.
 
     \b
     T1W   Background image.
