@@ -42,13 +42,22 @@ dev = [
     "flake8",
 ]
 
-
 [project.urls]
 Homepage = "https://github.com/RioPhillips/anatprep"
 Repository = "https://github.com/RioPhillips/anatprep.git"
 
 [project.scripts]
 anatprep = "anatprep.cli:main"
+pymp2rage = "anatprep.cli:pymp2rage_cmd"
+mask = "anatprep.cli:mask_cmd"
+denoise = "anatprep.cli:denoise_cmd"
+cat12 = "anatprep.cli:cat12_cmd"
+nighres-dura = "anatprep.cli:nighres_dura_cmd"
+nighres-skullstrip = "anatprep.cli:nighres_skullstrip_cmd"
+sinus-auto = "anatprep.cli:sinus_auto_cmd"
+sinus-edit = "anatprep.cli:sinus_edit_cmd"
+brainmask-edit = "anatprep.cli:brainmask_edit_cmd"
+run-freesurfer = "anatprep.cli:freesurfer_cmd"
 
 [tool.setuptools.packages.find]
 where = ["."]

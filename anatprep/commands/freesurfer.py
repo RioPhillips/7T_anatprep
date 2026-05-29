@@ -1,46 +1,46 @@
 """
-freesurfer command: wrap FreeSurfer's recon-all for anatomical segmentation.
+    Wrap FreeSurfer's recon-all for anatomical segmentation.
 
-Two modes:
+    
+    Two modes:
+      Initial run (no --edit):
+        Full `recon-all -all` on the given T1w. Optionally use --flair
+        for pial refinement (passed as -FLAIR / -FLAIRpial) and/or
+        --highres for sub-mm input.
+      Rerun mode (--edit pial|wm):
+        Re-run recon-all on an existing FS subject after manual edits
+        in freeview (via `brainmask-edit`):
+          --edit pial : brainmask.mgz edited      -> -autorecon-pial
+          --edit wm   : wm.mgz (and possibly bm)  -> -autorecon2-wm -autorecon3
+        The FS subject directory is copied to
+        <subjects-dir>/.backups/<subject-id>_<timestamp>/ before
+        recon-all is invoked, in case the rerun goes sideways.
 
-  Initial run (no --edit):
-    Full ``recon-all -all`` on the given T1w (optionally with --t2
-    FLAIR/T2 for pial refinement, optionally with --highres for sub-mm
-    input).
+    
+    Parallelism:
+      --cpus N    threads for -openmp N (within-binary OpenMP threads).
+                  Diminishing returns past ~8 per FreeSurfer's guidance.
+      --parallel  appends -parallel so lh/rh stages run concurrently.
+                  Combines with --cpus, so peak load ~= 2 * N threads.
 
-  Rerun mode (--edit pial|wm):
-    Re-run recon-all on an existing FS subject after manual edits in
-    freeview (via ``anatprep brainmask-edit``):
+    
+    Subject ID is derived from BIDS entities in the T1w filename:
+      sub-S01_ses-MR1_..._T1w.nii.gz  -> "sub-S01_ses-MR1"
+      sub-S01_..._T1w.nii.gz          -> "sub-S01"
+    Override with --subject-id
 
-      --edit pial : brainmask.mgz edited        -> -autorecon-pial
-      --edit wm   : wm.mgz (and possibly bm)    -> -autorecon2-wm -autorecon3
-
-    The FS subject directory is copied to
-    ``<subjects-dir>/.backups/<subject-id>_<timestamp>/`` before
-    recon-all is invoked, in case the rerun goes sideways.
-
-Parallelism:
-    --cpus N    maps to ``-openmp N`` (within-binary OpenMP threads).
-                Diminishing returns past ~8 per FreeSurfer's own guidance.
-    --parallel  appends ``-parallel`` so lh/rh stages run concurrently.
-                Combines with --cpus, so peak load ~= 2 * N threads.
-
-The FS subject ID is derived from BIDS entities in the T1w filename:
-    sub-S01_ses-MR1_..._T1w.nii.gz  -> "sub-S01_ses-MR1"
-    sub-S01_..._T1w.nii.gz          -> "sub-S01"
-Override with --subject-id.
-
-Usage:
-  anatprep freesurfer T1W [--t2 FLAIR] [--subjects-dir DIR] \\
-                          [--subject-id NAME] [--edit pial|wm] \\
-                          [--cpus N] [--parallel] [--highres] [--force]
-"""
+    
+    Usage:
+      run-freesurfer T1W [--flair FILE] [--subjects-dir DIR] \\
+                         [--edit pial|wm] [--cpus N] [--parallel] \\
+                         [--highres] [--force] [--verbose]
+    """
 
 import os
 import shutil
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional
 
 from anatprep.core import (
     setup_command_logging,
@@ -55,13 +55,9 @@ from anatprep.core import (
 _VALID_EDIT_STAGES = ("pial", "wm")
 
 
-# ---------------------------------------------------------------------------
-# Public entry point
-# ---------------------------------------------------------------------------
-
 def run_freesurfer(
     t1w: Path,
-    t2: Optional[Path] = None,
+    flair: Optional[Path] = None,
     subjects_dir: Optional[Path] = None,
     subject_id: Optional[str] = None,
     edit: Optional[str] = None,
@@ -72,8 +68,8 @@ def run_freesurfer(
     verbose: bool = False,
 ) -> None:
     t1w = Path(t1w).resolve()
-    if t2 is not None:
-        t2 = Path(t2).resolve()
+    if flair is not None:
+        flair = Path(flair).resolve()
 
     if edit is not None and edit not in _VALID_EDIT_STAGES:
         raise ValueError(
@@ -82,8 +78,8 @@ def run_freesurfer(
 
     logger, _ = setup_command_logging("freesurfer", t1w, verbose=verbose)
     logger.info(f"T1w     : {t1w}")
-    if t2 is not None:
-        logger.info(f"T2/FLAIR: {t2}")
+    if flair is not None:
+        logger.info(f"FLAIR   : {flair}")
     logger.info(f"Mode    : {'rerun --edit ' + edit if edit else 'initial recon-all'}")
 
     # resolve config-driven defaults
@@ -103,7 +99,10 @@ def run_freesurfer(
     cpus = max(1, cpus)
     logger.info(f"CPUs        : {cpus} (-openmp)")
     if parallel:
-        logger.info(f"Parallel    : -parallel (peak load ~{cpus * 2} threads at hemisphere stages)")
+        logger.info(
+            f"Parallel    : -parallel "
+            f"(peak load ~{cpus * 2} threads at hemisphere stages)"
+        )
 
     _warn_missing_license(config, logger)
 
@@ -119,7 +118,7 @@ def run_freesurfer(
     if edit is None:
         _run_initial(
             t1w=t1w,
-            t2=t2,
+            flair=flair,
             subj_dir=subj_dir,
             subjects_dir=subjects_dir,
             subject_id=subject_id,
@@ -150,7 +149,7 @@ def run_freesurfer(
 def _run_initial(
     *,
     t1w: Path,
-    t2: Optional[Path],
+    flair: Optional[Path],
     subj_dir: Path,
     subjects_dir: Path,
     subject_id: str,
@@ -185,23 +184,17 @@ def _run_initial(
         cmd.append("-hires")
         logger.info("Including -hires (sub-mm input)")
 
-    if t2 is not None:
-        if not t2.exists():
-            raise FileNotFoundError(f"T2/FLAIR image not found: {t2}")
-        in_flag, pial_flag = _t2_or_flair_flags(t2)
-        cmd += [in_flag, str(t2), pial_flag]
-        logger.info(f"Including {in_flag} {t2.name} {pial_flag}")
+    if flair is not None:
+        if not flair.exists():
+            raise FileNotFoundError(f"FLAIR image not found: {flair}")
+        cmd += ["-FLAIR", str(flair), "-FLAIRpial"]
+        logger.info(f"Including -FLAIR {flair.name} -FLAIRpial")
 
     cmd.append("-all")
 
     logger.info("Command: " + " ".join(cmd))
     run_command(cmd, logger, env=env)
     logger.info(f"Initial recon-all complete for {subject_id}")
-
-
-def _t2_or_flair_flags(t2: Path) -> Tuple[str, str]:
-    """Pick -T2/-T2pial vs -FLAIR/-FLAIRpial based on filename."""
-    return ("-FLAIR", "-FLAIRpial") if "flair" in t2.name.lower() else ("-T2", "-T2pial")
 
 
 # ---------------------------------------------------------------------------
@@ -293,7 +286,7 @@ def _warn_missing_license(config: dict, logger) -> None:
 
 
 def _refuse_if_running(subj_dir: Path, logger) -> None:
-    """Refuse to act if recon-all looks like it is mid-run."""
+    # Refuse to act if recon-all looks like it is mid-run
     if not subj_dir.exists():
         return
     scripts = subj_dir / "scripts"
