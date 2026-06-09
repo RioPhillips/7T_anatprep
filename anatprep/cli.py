@@ -375,17 +375,45 @@ def sinus_edit_cmd(t1w, mask, verbose):
 @cli.command("brainmask-edit", context_settings=dict(help_option_names=["-h", "--help"]))
 @click.argument("fs_subject_dir",
                 type=click.Path(exists=True, file_okay=False, path_type=Path))
+@click.option("--target", type=click.Choice(["brainmask", "wm"]), default="brainmask",
+              show_default=True,
+              help="Volume to edit in ITK-Snap. brainmask -> rerun --edit pial; "
+                   "wm -> rerun --edit wm. ITK-Snap edits one volume per session.")
 @click.option("--verbose", "-v", is_flag=True)
-def brainmask_edit_cmd(fs_subject_dir, verbose):
+def brainmask_edit_cmd(fs_subject_dir, target, verbose):
     """
-    Open freeview to inspect/edit a FreeSurfer subject's brainmask and wm.
+    Edit a FreeSurfer subject's brainmask.mgz or wm.mgz in ITK-Snap.
+
+    \b
+    FS_SUBJECT_DIR  Path to the FS subject directory, e.g.
+                    derivatives/freesurfer/sub-S01_ses-MR1
+
+    The .mgz is converted to NIfTI (mri_convert), edited in ITK-Snap, and
+    converted back. Use `anatprep view-surfaces` to inspect the surfaces in
+    freeview.
+    """
+    from anatprep.commands.brainmask_edit import run_brainmask_edit
+    run_brainmask_edit(fs_subject_dir=fs_subject_dir, target=target, verbose=verbose)
+
+
+# ---------------------------------------------------------------------------
+# view-surfaces
+# ---------------------------------------------------------------------------
+
+@cli.command("view-surfaces", context_settings=dict(help_option_names=["-h", "--help"]))
+@click.argument("fs_subject_dir",
+                type=click.Path(exists=True, file_okay=False, path_type=Path))
+@click.option("--verbose", "-v", is_flag=True)
+def view_surfaces_cmd(fs_subject_dir, verbose):
+    """
+    Open freeview to inspect a FreeSurfer subject's white/pial surfaces.
 
     \b
     FS_SUBJECT_DIR  Path to the FS subject directory, e.g.
                     derivatives/freesurfer/sub-S01_ses-MR1
     """
-    from anatprep.commands.brainmask_edit import run_brainmask_edit
-    run_brainmask_edit(fs_subject_dir=fs_subject_dir, verbose=verbose)
+    from anatprep.commands.view_surfaces import run_view_surfaces
+    run_view_surfaces(fs_subject_dir=fs_subject_dir, verbose=verbose)
 
 
 # ---------------------------------------------------------------------------
