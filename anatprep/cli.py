@@ -83,6 +83,49 @@ def mask_cmd(input_image, output_image, method, force, verbose):
 
 
 # ---------------------------------------------------------------------------
+# apply-mask
+# ---------------------------------------------------------------------------
+@cli.command("apply-mask", context_settings=dict(help_option_names=["-h", "--help"]))
+@click.option("--input", "-i", "input_image", required=True,
+              type=click.Path(exists=True, dir_okay=False, path_type=Path),
+              help="Image to mask (typically the denoised T1w).")
+@click.option("--mask", "-m", required=True,
+              type=click.Path(exists=True, dir_okay=False, path_type=Path),
+              help="Mask whose foreground (>0) is KEPT; everything else is zeroed. "
+                   "Pass the sinus/dura-excluding mask from sinus-auto / sinus-edit.")
+@click.option("--out", "-o", "output_image", default=None,
+              type=click.Path(dir_okay=False, path_type=Path),
+              help="Output masked image (default: <input_stem>_masked.nii.gz).")
+@click.option("--winsorize", "-w", is_flag=True, default=False,
+              help="After masking, run WSD (winsorize->rescale->uint16, i.e. call_wsd). "
+                   "Off by default since `denoise` already does this.")
+@click.option("--lower", "-l", type=float, default=0.01, show_default=True,
+              help="Lower percentile for --winsorize.")
+@click.option("--upper", "-u", type=float, default=0.95, show_default=True,
+              help="Upper percentile for --winsorize (Heij masking uses 0.95).")
+@_common_options
+def apply_mask_cmd(input_image, mask, output_image, winsorize, lower, upper, force, verbose):
+    """
+    Apply a mask to an image (the "pial edit before recon-all").
+
+    \b
+    Keeps voxels where MASK > 0 and zeros the rest, producing the masked
+    T1w that feeds `run-freesurfer`.
+    """
+    from anatprep.commands.mask import run_apply_mask
+    run_apply_mask(
+        input_image=input_image,
+        mask=mask,
+        output_image=output_image,
+        winsorize=winsorize,
+        lower=lower,
+        upper=upper,
+        force=force,
+        verbose=verbose,
+    )
+
+
+# ---------------------------------------------------------------------------
 # nighres dura
 # ---------------------------------------------------------------------------
 @cli.command("nighres-dura", context_settings=dict(help_option_names=["-h", "--help"]))
@@ -349,7 +392,7 @@ def brainmask_edit_cmd(fs_subject_dir, verbose):
 # freesurfer (run-freesurfer)
 # ---------------------------------------------------------------------------
 
-@cli.command("freesurfer", context_settings=dict(help_option_names=["-h", "--help"]))
+@cli.command("run-freesurfer", context_settings=dict(help_option_names=["-h", "--help"]))
 @click.argument("t1w", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.option("--flair",
               type=click.Path(exists=True, dir_okay=False, path_type=Path),
@@ -374,11 +417,19 @@ def brainmask_edit_cmd(fs_subject_dir, verbose):
 @click.option("--parallel", is_flag=True, default=False,
               help="Pass -parallel to recon-all (hemisphere-level parallelism). "
                    "Doubles peak thread usage at lh/rh stages.")
-@click.option("--highres", is_flag=True, default=False,
-              help="Pass -hires to recon-all for sub-mm input.")
+@click.option("--highres/--no-highres", "highres", default=True,
+              help="Pass -hires to recon-all for sub-mm input "
+                   "(default: on; use --no-highres to disable).")
+@click.option("--edit", type=click.Choice(["pial", "wm"]), default=None,
+              help="Rerun mode after manual edits in freeview. "
+                   "pial -> -autorecon-pial -autorecon3, "
+                   "wm   -> -autorecon2-wm -autorecon3.")
+@click.option("--no-fix-ga", "no_fix_ga", is_flag=True, default=False,
+              help="Pass -no-fix-ga to recon-all (disable the gyrus-ambiens "
+                   "cortex-label fix). FreeSurfer 8.x hard-fails on some subjects ")
 @_common_options
 def freesurfer_cmd(t1w, flair, subjects_dir, subject_id, edit, cpus,
-                   parallel, highres, force, verbose):
+                   parallel, highres, no_fix_ga, force, verbose):
     """
     Wrap FreeSurfer's recon-all for anatomical segmentation.
 
@@ -426,6 +477,7 @@ def freesurfer_cmd(t1w, flair, subjects_dir, subject_id, edit, cpus,
         cpus=cpus,
         parallel=parallel,
         highres=highres,
+        no_fix_ga=no_fix_ga,
         force=force,
         verbose=verbose,
     )

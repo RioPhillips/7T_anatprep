@@ -91,7 +91,7 @@ def run_denoise(
 
     # Preserve the affine and header from the pre-WSD image so they survive
     # the ImageMath ops (which can occasionally alter qform/sform codes —
-    # this is why colleague's call_rescale calls call_copyheader afterwards)
+    # call_rescale calls call_copyheader 
     pre_wsd_img = nib.load(str(out))
     out_affine = pre_wsd_img.affine
     out_header = pre_wsd_img.header

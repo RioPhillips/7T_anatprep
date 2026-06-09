@@ -58,6 +58,7 @@ sinus-auto = "anatprep.cli:sinus_auto_cmd"
 sinus-edit = "anatprep.cli:sinus_edit_cmd"
 brainmask-edit = "anatprep.cli:brainmask_edit_cmd"
 run-freesurfer = "anatprep.cli:freesurfer_cmd"
+apply-mask = "anatprep.cli:apply_mask_cmd"
 
 [tool.setuptools.packages.find]
 where = ["."]

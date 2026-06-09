@@ -1,39 +1,45 @@
 """
     Wrap FreeSurfer's recon-all for anatomical segmentation.
 
-    
+
     Two modes:
       Initial run (no --edit):
         Full `recon-all -all` on the given T1w. Optionally use --flair
-        for pial refinement (passed as -FLAIR / -FLAIRpial) and/or
-        --highres for sub-mm input.
+        for pial refinement (passed as -FLAIR / -FLAIRpial). Sub-mm
+        (-hires) is on by default; pass --no-highres to disable.
       Rerun mode (--edit pial|wm):
         Re-run recon-all on an existing FS subject after manual edits
         in freeview (via `brainmask-edit`):
-          --edit pial : brainmask.mgz edited      -> -autorecon-pial
+          --edit pial : brainmask.mgz edited      -> -autorecon-pial -autorecon3
           --edit wm   : wm.mgz (and possibly bm)  -> -autorecon2-wm -autorecon3
         The FS subject directory is copied to
         <subjects-dir>/.backups/<subject-id>_<timestamp>/ before
         recon-all is invoked, in case the rerun goes sideways.
 
-    
+
+    FLAIR reuse on reruns:
+      The initial run conforms the FLAIR into mri/FLAIR.mgz. On a rerun we
+      re-add -FLAIRpial when that file is present so the regenerated pial
+      keeps using the FLAIR (matches the reference pipeline).
+
+
     Parallelism:
       --cpus N    threads for -openmp N (within-binary OpenMP threads).
                   Diminishing returns past ~8 per FreeSurfer's guidance.
       --parallel  appends -parallel so lh/rh stages run concurrently.
                   Combines with --cpus, so peak load ~= 2 * N threads.
 
-    
+
     Subject ID is derived from BIDS entities in the T1w filename:
       sub-S01_ses-MR1_..._T1w.nii.gz  -> "sub-S01_ses-MR1"
       sub-S01_..._T1w.nii.gz          -> "sub-S01"
     Override with --subject-id
 
-    
+
     Usage:
       run-freesurfer T1W [--flair FILE] [--subjects-dir DIR] \\
                          [--edit pial|wm] [--cpus N] [--parallel] \\
-                         [--highres] [--force] [--verbose]
+                         [--no-highres] [--no-fix-ga] [--force] [--verbose]
     """
 
 import os
@@ -63,7 +69,8 @@ def run_freesurfer(
     edit: Optional[str] = None,
     cpus: Optional[int] = None,
     parallel: bool = False,
-    highres: bool = False,
+    highres: bool = True,
+    no_fix_ga: bool = False,
     force: bool = False,
     verbose: bool = False,
 ) -> None:
@@ -103,6 +110,7 @@ def run_freesurfer(
             f"Parallel    : -parallel "
             f"(peak load ~{cpus * 2} threads at hemisphere stages)"
         )
+    logger.info(f"Highres     : {'-hires' if highres else 'off (--no-highres)'}")
 
     _warn_missing_license(config, logger)
 
@@ -125,6 +133,7 @@ def run_freesurfer(
             cpus=cpus,
             parallel=parallel,
             highres=highres,
+            no_fix_ga=no_fix_ga,
             force=force,
             env=env,
             logger=logger,
@@ -137,6 +146,8 @@ def run_freesurfer(
             edit=edit,
             cpus=cpus,
             parallel=parallel,
+            highres=highres,
+            no_fix_ga=no_fix_ga,
             env=env,
             logger=logger,
         )
@@ -156,6 +167,7 @@ def _run_initial(
     cpus: int,
     parallel: bool,
     highres: bool,
+    no_fix_ga: bool,
     force: bool,
     env: dict,
     logger,
@@ -184,6 +196,10 @@ def _run_initial(
         cmd.append("-hires")
         logger.info("Including -hires (sub-mm input)")
 
+    if no_fix_ga:
+        cmd.append("-no-fix-ga")
+        logger.info("Including -no-fix-ga (skip gyrus-ambiens cortex-label fix)")
+
     if flair is not None:
         if not flair.exists():
             raise FileNotFoundError(f"FLAIR image not found: {flair}")
@@ -209,6 +225,8 @@ def _run_rerun(
     edit: str,
     cpus: int,
     parallel: bool,
+    highres: bool,
+    no_fix_ga: bool,
     env: dict,
     logger,
 ) -> None:
@@ -227,8 +245,8 @@ def _run_rerun(
     shutil.copytree(subj_dir, backup_dir, symlinks=True)
 
     if edit == "pial":
-        recon_flags = ["-autorecon-pial"]
-        logger.info("Rerun strategy: -autorecon-pial (brainmask edit)")
+        recon_flags = ["-autorecon-pial", "-autorecon3"]
+        logger.info("Rerun strategy: -autorecon-pial -autorecon3 (brainmask edit)")
     else:  # "wm"
         recon_flags = ["-autorecon2-wm", "-autorecon3"]
         logger.info("Rerun strategy: -autorecon2-wm -autorecon3 (wm +/- brainmask edit)")
@@ -243,6 +261,14 @@ def _run_rerun(
     if parallel:
         cmd.append("-parallel")
 
+    if highres:
+        cmd.append("-hires")
+
+    if no_fix_ga:
+        cmd.append("-no-fix-ga")
+
+    cmd += _reuse_flair_flag(subj_dir, logger)
+
     logger.info("Command: " + " ".join(cmd))
     run_command(cmd, logger, env=env)
     logger.info(f"Rerun complete for {subject_id}")
@@ -251,6 +277,14 @@ def _run_rerun(
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _reuse_flair_flag(subj_dir: Path, logger) -> list:
+    """Re-add -FLAIRpial on a rerun if the FLAIR was conformed into mri/FLAIR.mgz."""
+    if (subj_dir / "mri" / "FLAIR.mgz").exists():
+        logger.info("Re-using FLAIR for pial refinement (-FLAIRpial)")
+        return ["-FLAIRpial"]
+    return []
+
 
 def _resolve_subjects_dir(
     cli_value: Optional[Path],
