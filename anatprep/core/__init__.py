@@ -8,6 +8,7 @@ from .utils import (
     run_command,
     check_output,
     resolve_studydir,
+    resolve_subjects_dir,
     find_studydir_from_cwd,
     load_anatprep_config,
     load_mp2rage_params,
@@ -38,4 +39,5 @@ __all__ = [
     "check_consistent_entities",
     "bids_prefix",
     "get_docker_user_args",
+    "resolve_subjects_dir"
 ]

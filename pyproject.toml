@@ -60,6 +60,7 @@ brainmask-edit = "anatprep.cli:brainmask_edit_cmd"
 run-freesurfer = "anatprep.cli:freesurfer_cmd"
 apply-mask = "anatprep.cli:apply_mask_cmd"
 view-surfaces = "anatprep.cli:view_surfaces_cmd"
+run-fmriprep = "anatprep.cli:fmriprep_cmd"
 
 [tool.setuptools.packages.find]
 where = ["."]

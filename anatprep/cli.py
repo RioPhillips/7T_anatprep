@@ -125,6 +125,84 @@ def apply_mask_cmd(input_image, mask, output_image, winsorize, lower, upper, for
     )
 
 
+###################################################
+# fmriprep command
+###################################################
+@cli.command("run-fmriprep", context_settings=dict(help_option_names=["-h", "--help"]))
+@click.argument("subject", type=str)
+@click.option("--anat", type=click.Path(exists=True, dir_okay=False, path_type=Path), default=None,
+              help="Cleaned T1w to use as the anatomical (overrides --anat-desc lookup).")
+@click.option("--anat-desc", type=click.Choice(["denoised", "masked"]), default="denoised",
+              show_default=True,
+              help="Which anatprep derivative to auto-resolve when --anat is omitted. "
+                   "'masked' is skull-stripped and auto-sets --skull-strip-t1w skip.")
+@click.option("--session", "-n", type=str, default=None,
+              help="Session label (omit for sessionless studies).")
+@click.option("--anat-only", is_flag=True, default=False,
+              help="Restrict to the anatomical workflow (skip func). Default: anat + func.")
+@click.option("--task", "-t", type=str, default=None, help="Process a single task (--task-id).")
+@click.option("--bids-filter-file", "-u",
+              type=click.Path(exists=True, dir_okay=False, path_type=Path), default=None,
+              help="pybids query JSON for session/acquisition/run selection.")
+@click.option("--skull-strip-t1w", type=click.Choice(["skip", "auto", "force"]), default=None,
+              help="Passed through to fMRIprep. Defaults to 'skip' when --anat-desc masked.")
+@click.option("--bids-dir", type=click.Path(file_okay=False, path_type=Path), default=None,
+              help="Use a prebuilt BIDS input tree and skip assembly.")
+@click.option("--output-dir", type=click.Path(file_okay=False, path_type=Path), default=None,
+              help="Output dir (default: <studydir>/derivatives/fmriprep).")
+@click.option("--subjects-dir", type=click.Path(file_okay=False, path_type=Path), default=None,
+              help="FreeSurfer SUBJECTS_DIR to reuse (default: configured or "
+                   "<studydir>/derivatives/freesurfer).")
+@click.option("--workdir", "-w", type=click.Path(file_okay=False, path_type=Path), default=None,
+              help="fMRIprep work dir (default: <output-dir>/.work).")
+@click.option("--input-tree", type=click.Path(file_okay=False, path_type=Path), default=None,
+              help="Where to assemble the BIDS input (default: <output-dir>/sourcedata/bids).")
+@click.option("--cpus", "-j", type=int, default=None, help="--nthreads (default: config or 8).")
+@click.option("--omp-nthreads", type=int, default=None, help="--omp-nthreads (default: min(cpus,8)).")
+@click.option("--mem-mb", type=int, default=None, help="--mem-mb (default: config or 32000).")
+@click.option("--output-spaces", type=str, default=None,
+              help="Space-separated output spaces (default: config or 'fsnative').")
+@click.option("--kwargs-file", "-k",
+              type=click.Path(exists=True, dir_okay=False, path_type=Path), default=None,
+              help="File of extra fMRIprep args appended verbatim ('#' comments ignored).")
+@click.option("--docker", "use_docker", is_flag=True, default=False,
+              help="Run via the configured Docker image instead of the local binary.")
+@click.option("--clean-workdir", is_flag=True, default=False,
+              help="Remove this subject's single_subject_*_wf before running.")
+@_common_options
+def fmriprep_cmd(subject, anat, anat_desc, session, anat_only, task, bids_filter_file,
+                 skull_strip_t1w, bids_dir, output_dir, subjects_dir, workdir, input_tree,
+                 cpus, omp_nthreads, mem_mb, output_spaces, kwargs_file, use_docker,
+                 clean_workdir, force, verbose):
+    """
+    Run fMRIprep as the terminal step, using FreeSurfer recon-all.
+
+    \b
+    SUBJECT  Participant label(s), with or without 'sub-'. Comma-separated runs each.
+
+    \b
+    Assembles a BIDS input tree (cleaned anat + mirrored func/fmap) and runs
+    fMRIprep on it. recon-all is taken from --subjects-dir via --fs-subjects-dir.
+
+    \b
+    Usage:
+      run-fmriprep 7T049C10                         # desc-denoised anat, anat+func
+      run-fmriprep 7T049C10 --anat-only             # surfaces only
+      run-fmriprep 7T049C10 -u code/fmriprep_config_ses1.json -k code/fmriprep_options -j 10
+      run-fmriprep 7T049C10 --anat-desc masked      # auto --skull-strip-t1w skip
+    """
+    from anatprep.commands.fmriprep import run_fmriprep
+    for s in [x.strip() for x in subject.split(",") if x.strip()]:
+        run_fmriprep(
+            subject=s, anat=anat, anat_desc=anat_desc, session=session,
+            bids_dir=bids_dir, output_dir=output_dir, subjects_dir=subjects_dir,
+            workdir=workdir, input_tree=input_tree, anat_only=anat_only, task=task,
+            bids_filter_file=bids_filter_file, skull_strip_t1w=skull_strip_t1w,
+            output_spaces=output_spaces, cpus=cpus, omp_nthreads=omp_nthreads,
+            mem_mb=mem_mb, kwargs_file=kwargs_file, use_docker=use_docker,
+            clean_workdir=clean_workdir, force=force, verbose=verbose,
+        )
+
 # ---------------------------------------------------------------------------
 # nighres dura
 # ---------------------------------------------------------------------------

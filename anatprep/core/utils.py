@@ -142,6 +142,23 @@ def config_get(config: Dict[str, Any], key: str, default: Any = None) -> Any:
     return val
 
 
+def resolve_subjects_dir(cli_value, config, studydir):
+    """Resolve the FreeSurfer SUBJECTS_DIR. Shared by run-freesurfer and run-fmriprep.
+
+    Priority: explicit CLI value -> tools.freesurfer.subjects_dir (relative to
+    studydir if not absolute) -> <studydir>/derivatives/freesurfer.
+    """
+    from pathlib import Path
+    if cli_value is not None:
+        return Path(cli_value).resolve()
+    cfg = config_get(config, "tools.freesurfer.subjects_dir")
+    if cfg is not None:
+        c = Path(cfg)
+        if not c.is_absolute():
+            c = studydir / c
+        return c.resolve()
+    return (studydir / "derivatives" / "freesurfer").resolve()
+
 # ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------

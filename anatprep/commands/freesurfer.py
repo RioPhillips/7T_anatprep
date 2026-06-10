@@ -55,6 +55,7 @@ from anatprep.core import (
     resolve_studydir,
     extract_bids_entities,
     run_command,
+    resolve_subjects_dir
 )
 
 
@@ -93,7 +94,7 @@ def run_freesurfer(
     studydir = resolve_studydir()
     config = load_anatprep_config(studydir)
 
-    subjects_dir = _resolve_subjects_dir(subjects_dir, config, studydir)
+    subjects_dir = resolve_subjects_dir(subjects_dir, config, studydir)
     subjects_dir.mkdir(parents=True, exist_ok=True)
     logger.info(f"SUBJECTS_DIR: {subjects_dir}")
 
@@ -286,20 +287,6 @@ def _reuse_flair_flag(subj_dir: Path, logger) -> list:
     return []
 
 
-def _resolve_subjects_dir(
-    cli_value: Optional[Path],
-    config: dict,
-    studydir: Path,
-) -> Path:
-    if cli_value is not None:
-        return Path(cli_value).resolve()
-    cfg = config_get(config, "tools.freesurfer.subjects_dir")
-    if cfg is not None:
-        candidate = Path(cfg)
-        if not candidate.is_absolute():
-            candidate = studydir / candidate
-        return candidate.resolve()
-    return (studydir / "derivatives" / "freesurfer").resolve()
 
 
 def _derive_subject_id(t1w: Path) -> str:
