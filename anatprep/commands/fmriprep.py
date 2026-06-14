@@ -1,10 +1,10 @@
 """
-run-fmriprep command: wraps fMRIprep 
+run-fmriprep command: wrap fMRIprep as the terminal step of the pipeline.
 
 We assemble a small BIDS input tree containing the *cleaned*
 anatomical (desc-denoised by default) plus the subject's func/fmap mirrored
 from rawdata, and run fMRIprep on that. FreeSurfer recon-all is reused from
-derivatives/freesurfer via --fs-subjects-dir.
+derivatives/freesurfer via --fs-subjects-dir (it is NOT copied into the tree).
 
 Ingredients
 -----------
@@ -25,7 +25,11 @@ Usage:
                [--input-tree DIR]
                [--cpus N] [--omp-nthreads N] [--mem-mb M]
                [--output-spaces "fsnative ..."] [--kwargs-file FILE]
-               [--docker] [--clean-workdir] [--force] [--verbose]
+               [--notrack/--track] [--local] [--clean-workdir] [--force] [--verbose]
+
+By default fMRIprep runs via `docker run` using the image in
+tools.fmriprep.docker_image (with --shm-size from tools.fmriprep.shm_size).
+Pass --local to use a bare-metal `fmriprep` binary.
 """
 
 import json
@@ -41,7 +45,6 @@ from anatprep.core import (
     resolve_studydir,
     resolve_subjects_dir,
     run_command,
-    get_docker_user_args,
     extract_bids_entities,
     bids_prefix,
     input_stem,
@@ -74,7 +77,8 @@ def run_fmriprep(
     omp_nthreads: Optional[int] = None,
     mem_mb: Optional[int] = None,
     kwargs_file: Optional[Path] = None,
-    use_docker: bool = False,
+    local: bool = False,
+    notrack: bool = True,
     stop_on_first_crash: bool = True,
     clean_workdir: bool = False,
     force: bool = False,
@@ -101,7 +105,7 @@ def run_fmriprep(
         else (studydir / "derivatives" / "fmriprep").resolve()
     )
     subjects_dir = resolve_subjects_dir(subjects_dir, config, studydir)
-    workdir = _resolve_workdir(workdir, config, studydir, output_dir)
+    workdir = _resolve_workdir(workdir, config, studydir)
     input_tree = (
         Path(input_tree).resolve() if input_tree
         else (output_dir / "sourcedata" / "bids").resolve()
@@ -121,11 +125,12 @@ def run_fmriprep(
 
     output_dir.mkdir(parents=True, exist_ok=True)
     workdir.mkdir(parents=True, exist_ok=True)
+    logger.info(f"Study dir   : {studydir}")
     logger.info(f"Output dir  : {output_dir}")
     logger.info(f"SUBJECTS_DIR: {subjects_dir}")
     logger.info(f"Work dir    : {workdir}")
 
-    # --- FreeSurfer license ------------
+    # --- FreeSurfer license (shared with run-freesurfer config) ------------
     license_path = config_get(config, "tools.freesurfer.license")
     if not license_path or not Path(license_path).exists():
         raise RuntimeError(
@@ -141,7 +146,10 @@ def run_fmriprep(
     if omp_nthreads is None:
         omp_nthreads = int(config_get(config, "tools.fmriprep.omp_nthreads",
                                       default=min(cpus, 8)))
-    omp_nthreads = max(1, min(omp_nthreads, cpus))
+    # Independent of cpus: -j caps how many processes run at once, --omp-nthreads
+    # sets threads *per* process. fMRIprep handles the relationship itself, so we
+    # don't clamp omp to cpus (that was collapsing `-j 1 --omp-nthreads 4` to 1).
+    omp_nthreads = max(1, omp_nthreads)
     if mem_mb is None:
         mem_mb = int(config_get(config, "tools.fmriprep.mem_mb", default=32000))
     if output_spaces is None:
@@ -175,7 +183,7 @@ def run_fmriprep(
             skull_strip_t1w = "skip"
             logger.info("masked anat is skull-stripped; defaulting "
                         "--skull-strip-t1w skip (override with --skull-strip-t1w).")
-        link_mode = "copy" if use_docker else "symlink"
+        link_mode = "symlink" if local else "copy"
         bids_root = _assemble_bids_input(
             input_tree=input_tree, studydir=studydir, label=label, session=session,
             anat_path=anat_path, anat_only=anat_only, link_mode=link_mode,
@@ -189,21 +197,41 @@ def run_fmriprep(
 
     # --- build & run -------------------------------------------------------
     common = dict(
-        label=label, bids_root=bids_root, output_dir=output_dir,
-        subjects_dir=subjects_dir, workdir=workdir, license_path=license_path,
-        output_spaces=output_spaces, cpus=cpus, omp_nthreads=omp_nthreads,
-        mem_mb=mem_mb, anat_only=anat_only, task=task,
-        bids_filter_file=bids_filter_file, skull_strip_t1w=skull_strip_t1w,
-        stop_on_first_crash=stop_on_first_crash, extra=extra,
+        label=label, output_spaces=output_spaces, cpus=cpus,
+        omp_nthreads=omp_nthreads, mem_mb=mem_mb, anat_only=anat_only, task=task,
+        skull_strip_t1w=skull_strip_t1w, stop_on_first_crash=stop_on_first_crash,
+        notrack=notrack, extra=extra,
     )
-    if use_docker:
+    if local:
+        if shutil.which("fmriprep") is None:
+            raise RuntimeError(
+                "'fmriprep' not found on PATH. Drop --local to use the container, "
+                "or fix the bare-metal install."
+            )
+        cmd = ["fmriprep"] + _build_bidsapp_args(
+            bids_root=str(bids_root), output_dir=str(output_dir),
+            subjects_dir=str(subjects_dir), workdir=str(workdir),
+            license_path=str(license_path), bids_filter_file=bids_filter_file,
+            **common,
+        )
+    else:
+        if shutil.which("docker") is None:
+            raise RuntimeError(
+                "'docker' not found on PATH. Install Docker, or pass --local."
+            )
         image = config_get(config, "tools.fmriprep.docker_image",
                            default="nipreps/fmriprep:latest")
-        cmd = _build_docker_cmd(image=image, logger=logger, **common)
-    else:
-        if shutil.which("fmriprep") is None:
-            raise RuntimeError("'fmriprep' not found on PATH. Install it or use --docker.")
-        cmd = _build_local_cmd(**common)
+        # fmriprep-docker can't set --shm-size, and Docker's 64MB default starves
+        # the MultiProc worker pool (BrokenProcessPool at startup), so we run
+        # `docker run` directly with an adequate /dev/shm.
+        shm_size = str(config_get(config, "tools.fmriprep.shm_size", default="8g"))
+        logger.info(f"Container /dev/shm: --shm-size={shm_size}")
+        cmd = _build_docker_run_cmd(
+            image=image, shm_size=shm_size, bids_root=bids_root,
+            output_dir=output_dir, subjects_dir=subjects_dir, workdir=workdir,
+            license_path=license_path, bids_filter_file=bids_filter_file,
+            **common,
+        )
 
     logger.info("Command: " + " ".join(cmd))
     run_command(cmd, logger)
@@ -337,13 +365,61 @@ def _write_dataset_description(input_tree: Path) -> None:
 # Command builders
 # ---------------------------------------------------------------------------
 
-def _build_local_cmd(
+def _build_docker_run_cmd(
+    *, image, shm_size, label, bids_root, output_dir, subjects_dir, workdir,
+    license_path, output_spaces, cpus, omp_nthreads, mem_mb, anat_only, task,
+    bids_filter_file, skull_strip_t1w, stop_on_first_crash, extra,
+) -> List[str]:
+    """Raw `docker run` so we can set --shm-size (fmriprep-docker can't) and
+    mount the TemplateFlow cache. Host paths are bound to fixed container mount
+    points, and the BIDS-App args use those container paths.
+    """
+    c_bids, c_out, c_work, c_fs = "/data", "/out", "/work", "/opt/subjects"
+    c_lic = "/opt/freesurfer/license.txt"
+    c_tf = "/templateflow"
+    tf_home = Path.home() / ".cache" / "templateflow"
+    tf_home.mkdir(parents=True, exist_ok=True)
+
+    binds = [
+        "-v", f"{bids_root}:{c_bids}:ro",
+        "-v", f"{output_dir}:{c_out}",
+        "-v", f"{workdir}:{c_work}",
+        "-v", f"{subjects_dir}:{c_fs}",
+        "-v", f"{license_path}:{c_lic}:ro",
+        "-v", f"{tf_home}:{c_tf}",
+    ]
+    c_filter = None
+    if bids_filter_file is not None:
+        bff = Path(bids_filter_file).resolve()
+        c_filter = f"/filters/{bff.name}"
+        binds += ["-v", f"{bff}:{c_filter}:ro"]
+
+    docker = [
+        "docker", "run", "--rm",
+        f"--shm-size={shm_size}",
+        "-u", f"{os.getuid()}:{os.getgid()}",   # own outputs as us, not root
+        "-e", f"TEMPLATEFLOW_HOME={c_tf}",
+        "-e", "HOME=/tmp",                       # writable HOME for the non-root uid
+        *binds,
+        image,
+    ]
+    return docker + _build_bidsapp_args(
+        label=label, bids_root=c_bids, output_dir=c_out, subjects_dir=c_fs,
+        workdir=c_work, license_path=c_lic, output_spaces=output_spaces,
+        cpus=cpus, omp_nthreads=omp_nthreads, mem_mb=mem_mb, anat_only=anat_only,
+        task=task, bids_filter_file=c_filter, skull_strip_t1w=skull_strip_t1w,
+        stop_on_first_crash=stop_on_first_crash, extra=extra,
+    )
+
+
+def _build_bidsapp_args(
     *, label, bids_root, output_dir, subjects_dir, workdir, license_path,
     output_spaces, cpus, omp_nthreads, mem_mb, anat_only, task, bids_filter_file,
-    skull_strip_t1w, stop_on_first_crash, extra,
+    skull_strip_t1w, stop_on_first_crash, notrack, extra,
 ) -> List[str]:
-    cmd = [
-        "fmriprep",
+    """The BIDS-App argument list, shared by the bare-metal `fmriprep` binary
+    (host paths) and the `docker run` path (container paths)."""
+    args = [
         str(bids_root), str(output_dir), "participant",
         "--participant-label", label,
         "--fs-subjects-dir", str(subjects_dir),
@@ -356,54 +432,14 @@ def _build_local_cmd(
         "--mem-mb", str(mem_mb),
         "-w", str(workdir),
     ]
-    cmd += _common_flags(anat_only, task, bids_filter_file, skull_strip_t1w,
-                         stop_on_first_crash)
-    cmd += extra
-    return cmd
-
-
-def _build_docker_cmd(
-    *, image, label, bids_root, output_dir, subjects_dir, workdir, license_path,
-    output_spaces, cpus, omp_nthreads, mem_mb, anat_only, task, bids_filter_file,
-    skull_strip_t1w, stop_on_first_crash, extra, logger,
-) -> List[str]:
-    c_bids, c_out, c_work, c_fs = "/data", "/out", "/work", "/fsdir"
-    c_lic = "/opt/freesurfer/license.txt"
-    binds = [
-        "-v", f"{bids_root}:{c_bids}:ro",
-        "-v", f"{output_dir}:{c_out}",
-        "-v", f"{workdir}:{c_work}",
-        "-v", f"{subjects_dir}:{c_fs}",
-        "-v", f"{license_path}:{c_lic}:ro",
-    ]
-    c_filter = None
-    if bids_filter_file is not None:
-        bff = Path(bids_filter_file).resolve()
-        c_filter = f"/filters/{bff.name}"
-        binds += ["-v", f"{bff}:{c_filter}:ro"]
-
-    docker = ["docker", "run", "--rm", *get_docker_user_args(), *binds, image]
-    docker += [
-        c_bids, c_out, "participant",
-        "--participant-label", label,
-        "--fs-subjects-dir", c_fs,
-        "--fs-license-file", c_lic,
-        "--skip-bids-validation",
-        "--md-only-boilerplate",
-        "--output-spaces", *output_spaces.split(),
-        "--nthreads", str(cpus),
-        "--omp-nthreads", str(omp_nthreads),
-        "--mem-mb", str(mem_mb),
-        "-w", c_work,
-    ]
-    docker += _common_flags(anat_only, task, c_filter, skull_strip_t1w,
-                            stop_on_first_crash)
-    docker += extra
-    return docker
+    args += _common_flags(anat_only, task, bids_filter_file, skull_strip_t1w,
+                          stop_on_first_crash, notrack)
+    args += extra
+    return args
 
 
 def _common_flags(anat_only, task, bids_filter_file, skull_strip_t1w,
-                  stop_on_first_crash) -> List[str]:
+                  stop_on_first_crash, notrack) -> List[str]:
     flags: List[str] = []
     if anat_only:
         flags.append("--anat-only")
@@ -415,6 +451,10 @@ def _common_flags(anat_only, task, bids_filter_file, skull_strip_t1w,
         flags += ["--skull-strip-t1w", skull_strip_t1w]
     if stop_on_first_crash:
         flags.append("--stop-on-first-crash")
+    if notrack:
+        # Disable sentry telemetry: its background network threads can segfault
+        # the main process during GC on Python 3.12 (cpython#111049-class crash).
+        flags.append("--notrack")
     return flags
 
 
@@ -422,7 +462,7 @@ def _common_flags(anat_only, task, bids_filter_file, skull_strip_t1w,
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _resolve_workdir(cli_value, config, studydir, output_dir) -> Path:
+def _resolve_workdir(cli_value, config, studydir) -> Path:
     if cli_value is not None:
         return Path(cli_value).resolve()
     cfg = config_get(config, "tools.fmriprep.workdir")
@@ -431,7 +471,11 @@ def _resolve_workdir(cli_value, config, studydir, output_dir) -> Path:
         if not c.is_absolute():
             c = studydir / c
         return c.resolve()
-    return (output_dir / ".work").resolve()
+    # Default OUTSIDE the output tree: fMRIprep's work dir must not live inside
+    # the dir bind-mounted as /out (nested mounts misbehave), and heavy work
+    # dirs are a poor fit for some networked study filesystems. Namespaced by
+    # study so multiple studies don't collide. Override via tools.fmriprep.workdir.
+    return (Path.home() / ".cache" / "anatprep" / studydir.name / "fmriprep_work").resolve()
 
 
 def _read_kwargs_file(kwargs_file, logger) -> List[str]:
@@ -455,10 +499,13 @@ def _read_kwargs_file(kwargs_file, logger) -> List[str]:
 def _clean_subject_workdir(workdir: Path, label: str, logger) -> None:
     """Remove this participant's fMRIprep workflow folder(s) so the next run
     re-imports updated FreeSurfer surfaces. Leaves other participants intact.
+    Matches both the pre-24.x (`single_subject_<label>_wf`) and current
+    (`sub_<label>_wf`) naming.
     """
-    targets = [t for t in workdir.rglob(f"single_subject_{label}_wf") if t.is_dir()]
+    patterns = (f"single_subject_{label}_wf", f"sub_{label}_wf")
+    targets = [t for p in patterns for t in workdir.rglob(p) if t.is_dir()]
     if not targets:
-        logger.info(f"--clean-workdir: no single_subject_{label}_wf under {workdir}")
+        logger.info(f"--clean-workdir: no subject workflow folder for {label} under {workdir}")
         return
     for t in targets:
         logger.info(f"--clean-workdir: removing {t}")

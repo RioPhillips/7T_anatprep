@@ -125,7 +125,6 @@ def apply_mask_cmd(input_image, mask, output_image, winsorize, lower, upper, for
     )
 
 
-###################################################
 # fmriprep command
 ###################################################
 @cli.command("run-fmriprep", context_settings=dict(help_option_names=["-h", "--help"]))
@@ -154,28 +153,34 @@ def apply_mask_cmd(input_image, mask, output_image, winsorize, lower, upper, for
               help="FreeSurfer SUBJECTS_DIR to reuse (default: configured or "
                    "<studydir>/derivatives/freesurfer).")
 @click.option("--workdir", "-w", type=click.Path(file_okay=False, path_type=Path), default=None,
-              help="fMRIprep work dir (default: <output-dir>/.work).")
+              help="fMRIprep work dir (default: tools.fmriprep.workdir, else "
+                   "~/.cache/anatprep/<study>/fmriprep_work). Keep it OUTSIDE the output dir.")
 @click.option("--input-tree", type=click.Path(file_okay=False, path_type=Path), default=None,
               help="Where to assemble the BIDS input (default: <output-dir>/sourcedata/bids).")
 @click.option("--cpus", "-j", type=int, default=None, help="--nthreads (default: config or 8).")
-@click.option("--omp-nthreads", type=int, default=None, help="--omp-nthreads (default: min(cpus,8)).")
+@click.option("--omp-nthreads", type=int, default=None,
+              help="--omp-nthreads, threads per process (default: config or min(cpus,8)). "
+                   "Independent of -j.")
 @click.option("--mem-mb", type=int, default=None, help="--mem-mb (default: config or 32000).")
 @click.option("--output-spaces", type=str, default=None,
               help="Space-separated output spaces (default: config or 'fsnative').")
 @click.option("--kwargs-file", "-k",
               type=click.Path(exists=True, dir_okay=False, path_type=Path), default=None,
               help="File of extra fMRIprep args appended verbatim ('#' comments ignored).")
-@click.option("--docker", "use_docker", is_flag=True, default=False,
-              help="Run via the configured Docker image instead of the local binary.")
+@click.option("--notrack/--track", "notrack", default=True, show_default=True,
+              help="Disable fMRIprep's sentry telemetry (default). Use --track to re-enable.")
+@click.option("--local", is_flag=True, default=False,
+              help="Run the bare-metal `fmriprep` binary instead of `docker run` "
+                   "(the container is the default).")
 @click.option("--clean-workdir", is_flag=True, default=False,
-              help="Remove this subject's single_subject_*_wf before running.")
+              help="Remove this subject's fMRIprep workflow folder before running.")
 @_common_options
 def fmriprep_cmd(subject, anat, anat_desc, session, anat_only, task, bids_filter_file,
                  skull_strip_t1w, bids_dir, output_dir, subjects_dir, workdir, input_tree,
-                 cpus, omp_nthreads, mem_mb, output_spaces, kwargs_file, use_docker,
+                 cpus, omp_nthreads, mem_mb, output_spaces, kwargs_file, notrack, local,
                  clean_workdir, force, verbose):
     """
-    Run fMRIprep as the terminal step, using FreeSurfer recon-all.
+    Run fMRIprep.
 
     \b
     SUBJECT  Participant label(s), with or without 'sub-'. Comma-separated runs each.
@@ -188,8 +193,8 @@ def fmriprep_cmd(subject, anat, anat_desc, session, anat_only, task, bids_filter
     Usage:
       run-fmriprep 7T049C10                         # desc-denoised anat, anat+func
       run-fmriprep 7T049C10 --anat-only             # surfaces only
-      run-fmriprep 7T049C10 -u code/fmriprep_config_ses1.json -k code/fmriprep_options -j 10
       run-fmriprep 7T049C10 --anat-desc masked      # auto --skull-strip-t1w skip
+      run-fmriprep 7T049C10 -u code/fmriprep_filter.json -j 8   # session/run filter
     """
     from anatprep.commands.fmriprep import run_fmriprep
     for s in [x.strip() for x in subject.split(",") if x.strip()]:
@@ -199,10 +204,9 @@ def fmriprep_cmd(subject, anat, anat_desc, session, anat_only, task, bids_filter
             workdir=workdir, input_tree=input_tree, anat_only=anat_only, task=task,
             bids_filter_file=bids_filter_file, skull_strip_t1w=skull_strip_t1w,
             output_spaces=output_spaces, cpus=cpus, omp_nthreads=omp_nthreads,
-            mem_mb=mem_mb, kwargs_file=kwargs_file, use_docker=use_docker,
+            mem_mb=mem_mb, kwargs_file=kwargs_file, notrack=notrack, local=local,
             clean_workdir=clean_workdir, force=force, verbose=verbose,
         )
-
 # ---------------------------------------------------------------------------
 # nighres dura
 # ---------------------------------------------------------------------------
