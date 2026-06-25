@@ -59,7 +59,7 @@ pip install -e ".[dev]"
 pip install -e ".[nighres]"
 ```
 
-Every subcommand is also installed as a **standalone console script**, so `anatprep pymp2rage ...` and `pymp2rage ...` are equivalent. The same is true for `mask`, `denoise`, `cat12`, `sinus-auto`, `sinus-edit`, `apply-mask`, `run-freesurfer`, `brainmask-edit`, `view-surfaces`, `run-fmriprep`, `nighres-dura`, `nighres-skullstrip`.
+Every subcommand is also installed as a **standalone console script**, so `anatprep pymp2rage ...` and `pymp2rage ...` both work. The same for `mask`, `denoise`, `cat12`, `sinus-auto`, `sinus-edit`, `apply-mask`, `run-freesurfer`, `brainmask-edit`, `view-surfaces`, `run-fmriprep`, `nighres-dura`, `nighres-skullstrip`.
 
 ### External dependencies
 
@@ -74,7 +74,7 @@ Every subcommand is also installed as a **standalone console script**, so `anatp
 | **Docker** + FreeSurfer license | `run-fmriprep` |
 | **Nighres** (Python) | `nighres-*` (optional) |
 
-> CAT12 can run via a **standalone MCR build** (no MATLAB licence needed). Point `matlab_cmd` at the MCR launcher (e.g. `.../run_spm25.sh`) and `spm_path` at the SPM bundled *inside* the standalone — the batch scripts auto-detect MCR mode. MCR R2023b + CAT12.9 is a known-good combination.
+> CAT12 can run via a **standalone MCR build** (no MATLAB licence). Point `matlab_cmd` at the MCR launcher (e.g. `.../run_spm25.sh`) and `spm_path` at the SPM bundled *inside* the standalone, and the batch scripts auto-detect MCR mode. MCR R2023b + CAT12.9 is a combination known to work alright.
 
 ---
 
