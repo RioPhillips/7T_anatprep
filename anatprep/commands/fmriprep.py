@@ -1,12 +1,12 @@
 """
 run-fmriprep command: wrap fMRIprep as the terminal step of the pipeline.
 
-We assemble a small BIDS input tree containing the *cleaned*
-anatomical (desc-denoised by default) plus the subject's func/fmap mirrored
+Assemble a small BIDS input tree containing the *cleaned*
+anatomical (desc-masked by default) plus the subject's func/fmap mirrored
 from rawdata, and run fMRIprep on that. FreeSurfer recon-all is reused from
 derivatives/freesurfer via --fs-subjects-dir (it is NOT copied into the tree).
 
-Ingredients
+Usages
 -----------
   anat : the single cleaned T1w (desc-denoised; or desc-masked + skull-strip
          skip). Renamed to a raw-style BIDS name so pybids treats it as the T1w.
@@ -54,9 +54,6 @@ _ANAT_DESCS = ("denoised", "masked")
 _SKULL_STRIP = ("skip", "auto", "force")
 
 
-# ---------------------------------------------------------------------------
-# Public entry point (one participant per call; CLI loops a comma-list)
-# ---------------------------------------------------------------------------
 
 def run_fmriprep(
     subject: str,
@@ -368,7 +365,7 @@ def _write_dataset_description(input_tree: Path) -> None:
 def _build_docker_run_cmd(
     *, image, shm_size, label, bids_root, output_dir, subjects_dir, workdir,
     license_path, output_spaces, cpus, omp_nthreads, mem_mb, anat_only, task,
-    bids_filter_file, skull_strip_t1w, stop_on_first_crash, extra,
+    bids_filter_file, skull_strip_t1w, stop_on_first_crash, notrack, extra,
 ) -> List[str]:
     """Raw `docker run` so we can set --shm-size (fmriprep-docker can't) and
     mount the TemplateFlow cache. Host paths are bound to fixed container mount
@@ -397,7 +394,12 @@ def _build_docker_run_cmd(
     docker = [
         "docker", "run", "--rm",
         f"--shm-size={shm_size}",
-        "-u", f"{os.getuid()}:{os.getgid()}",   # own outputs as us, not root
+        # Run as the invoking user, but with the GROUP that owns the output tree
+        # (e.g. a shared lab group) rather than the user's primary group. Docker
+        # drops supplementary groups, so a user who can write the shared tree on
+        # the host (via secondary group membership) otherwise can't from inside
+        # the container. Using the output dir's gid keeps outputs group-writable.
+        "-u", f"{os.getuid()}:{os.stat(output_dir).st_gid}",
         "-e", f"TEMPLATEFLOW_HOME={c_tf}",
         "-e", "HOME=/tmp",                       # writable HOME for the non-root uid
         *binds,
@@ -408,7 +410,7 @@ def _build_docker_run_cmd(
         workdir=c_work, license_path=c_lic, output_spaces=output_spaces,
         cpus=cpus, omp_nthreads=omp_nthreads, mem_mb=mem_mb, anat_only=anat_only,
         task=task, bids_filter_file=c_filter, skull_strip_t1w=skull_strip_t1w,
-        stop_on_first_crash=stop_on_first_crash, extra=extra,
+        stop_on_first_crash=stop_on_first_crash, notrack=notrack, extra=extra,
     )
 
 
