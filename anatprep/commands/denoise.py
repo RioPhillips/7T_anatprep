@@ -89,9 +89,8 @@ def run_denoise(
 # STEP 3: WSD: Winsorize --> Rescale --> Datatype 
     logger.info("Step 3: WSD post-processing (winsorize --> rescale [0,4095] --> uint16)")
 
-    # Preserve the affine and header from the pre-WSD image so they survive
-    # the ImageMath ops (which can occasionally alter qform/sform codes —
-    # call_rescale calls call_copyheader 
+    # preserves the affine and header from the pre-WSD image so they survive
+    # the ImageMath ops (which can occasionally alter qform/sform codes
     pre_wsd_img = nib.load(str(out))
     out_affine = pre_wsd_img.affine
     out_header = pre_wsd_img.header
@@ -119,7 +118,7 @@ def run_denoise(
     final_img.set_data_dtype(np.uint16)
     final_img.to_filename(str(out))
 
-    # Cleanup tmp WSD files
+    # cleanup tmp WSD files
     tmp_winsorize.unlink()
     tmp_rescale.unlink()
 

@@ -1,9 +1,9 @@
 """
-run-fmriprep command: wrap fMRIprep as the terminal step of the pipeline.
+run-fmriprep command: wraps fMRIprep as the terminal step of the pipeline.
 
-Assemble a small BIDS input tree containing the *cleaned*
+It assembles a small BIDS input tree containing the *cleaned*
 anatomical (desc-masked by default) plus the subject's func/fmap mirrored
-from rawdata, and run fMRIprep on that. FreeSurfer recon-all is reused from
+from rawdata, and runs fMRIprep on that. FreeSurfer recon-all is reused from
 derivatives/freesurfer via --fs-subjects-dir (it is NOT copied into the tree).
 
 Usages
@@ -96,7 +96,7 @@ def run_fmriprep(
     studydir = resolve_studydir()
     config = load_anatprep_config(studydir)
 
-    # --- paths -------------------------------------------------------------
+    # paths 
     output_dir = (
         Path(output_dir).resolve() if output_dir
         else (studydir / "derivatives" / "fmriprep").resolve()
@@ -127,7 +127,7 @@ def run_fmriprep(
     logger.info(f"SUBJECTS_DIR: {subjects_dir}")
     logger.info(f"Work dir    : {workdir}")
 
-    # --- FreeSurfer license (shared with run-freesurfer config) ------------
+    #  FreeSurfer license
     license_path = config_get(config, "tools.freesurfer.license")
     if not license_path or not Path(license_path).exists():
         raise RuntimeError(
@@ -136,16 +136,14 @@ def run_fmriprep(
         )
     license_path = Path(license_path).resolve()
 
-    # --- resources ---------------------------------------------------------
+    #  resources 
     if cpus is None:
         cpus = int(config_get(config, "tools.fmriprep.nthreads", default=8))
     cpus = max(1, cpus)
     if omp_nthreads is None:
         omp_nthreads = int(config_get(config, "tools.fmriprep.omp_nthreads",
                                       default=min(cpus, 8)))
-    # Independent of cpus: -j caps how many processes run at once, --omp-nthreads
-    # sets threads *per* process. fMRIprep handles the relationship itself, so we
-    # don't clamp omp to cpus (that was collapsing `-j 1 --omp-nthreads 4` to 1).
+
     omp_nthreads = max(1, omp_nthreads)
     if mem_mb is None:
         mem_mb = int(config_get(config, "tools.fmriprep.mem_mb", default=32000))
@@ -155,7 +153,7 @@ def run_fmriprep(
     logger.info(f"Resources   : nthreads={cpus} omp={omp_nthreads} mem_mb={mem_mb}")
     logger.info(f"Output space: {output_spaces}")
 
-    # --- skip / clean ------------------------------------------------------
+    # skip / clean 
     report = output_dir / f"sub-{label}.html"
     subj_out = output_dir / f"sub-{label}"
     if (report.exists() or subj_out.exists()) and not force:
@@ -167,7 +165,7 @@ def run_fmriprep(
     if clean_workdir:
         _clean_subject_workdir(workdir, label, logger)
 
-    # --- assemble (or reuse) the BIDS input tree ---------------------------
+    #  assemble (or reuse) the BIDS input tree 
     if bids_dir is not None:
         bids_root = Path(bids_dir).resolve()
         if not bids_root.exists():
@@ -192,7 +190,7 @@ def run_fmriprep(
 
     extra = _read_kwargs_file(kwargs_file, logger)
 
-    # --- build & run -------------------------------------------------------
+    # build & run 
     common = dict(
         label=label, output_spaces=output_spaces, cpus=cpus,
         omp_nthreads=omp_nthreads, mem_mb=mem_mb, anat_only=anat_only, task=task,
@@ -235,12 +233,11 @@ def run_fmriprep(
     logger.info(f"fMRIprep complete for sub-{label}")
 
 
-# ---------------------------------------------------------------------------
+
 # BIDS input-tree assembly
-# ---------------------------------------------------------------------------
 
 def _resolve_anat(anat, anat_desc, studydir, label, session, logger) -> Path:
-    """Explicit --anat wins; otherwise glob the chosen desc under anatprep."""
+    # explicit --anat wins; otherwise glob the chosen desc under anatprep
     if anat is not None:
         p = Path(anat).resolve()
         if not p.exists():
@@ -304,7 +301,7 @@ def _assemble_bids_input(
 
 
 def _normalize_t1w_name(anat_path: Path) -> str:
-    """Drop the derivative desc- entity, keep sub/ses/acq/run, suffix T1w."""
+    # drop the derivative desc- entity, keep sub/ses/acq/run, suffix T1w
     ents = extract_bids_entities(anat_path)
     ents.pop("desc", None)
     prefix = bids_prefix(ents, fallback=input_stem(anat_path))
@@ -338,7 +335,7 @@ def _place_t1w_sidecar(anat_path: Path, raw_base: Path, dst_t1w: Path, logger) -
 
 
 def _mirror_dir(src: Path, dst: Path, link_mode: str) -> None:
-    """Replicate a directory; sidecars copied, heavy images linked/copied."""
+    # replicate a directory; sidecars copied, heavy images linked/copied
     dst.mkdir(parents=True, exist_ok=True)
     for f in sorted(src.iterdir()):
         if f.is_dir():
@@ -358,16 +355,16 @@ def _write_dataset_description(input_tree: Path) -> None:
              "DatasetType": "raw"}, indent=2) + "\n")
 
 
-# ---------------------------------------------------------------------------
 # Command builders
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------
 
 def _build_docker_run_cmd(
     *, image, shm_size, label, bids_root, output_dir, subjects_dir, workdir,
     license_path, output_spaces, cpus, omp_nthreads, mem_mb, anat_only, task,
     bids_filter_file, skull_strip_t1w, stop_on_first_crash, notrack, extra,
 ) -> List[str]:
-    """Raw `docker run` so we can set --shm-size (fmriprep-docker can't) and
+    """
+    raw `docker run` so we can set --shm-size and
     mount the TemplateFlow cache. Host paths are bound to fixed container mount
     points, and the BIDS-App args use those container paths.
     """
@@ -394,7 +391,7 @@ def _build_docker_run_cmd(
     docker = [
         "docker", "run", "--rm",
         f"--shm-size={shm_size}",
-        # Run as the invoking user, but with the GROUP that owns the output tree
+        # r as the invoking user, but with the GROUP that owns the output tree
         # (e.g. a shared lab group) rather than the user's primary group. Docker
         # drops supplementary groups, so a user who can write the shared tree on
         # the host (via secondary group membership) otherwise can't from inside
@@ -419,8 +416,10 @@ def _build_bidsapp_args(
     output_spaces, cpus, omp_nthreads, mem_mb, anat_only, task, bids_filter_file,
     skull_strip_t1w, stop_on_first_crash, notrack, extra,
 ) -> List[str]:
-    """The BIDS-App argument list, shared by the bare-metal `fmriprep` binary
-    (host paths) and the `docker run` path (container paths)."""
+    """
+    the BIDS-App argument list, shared by the bare-metal `fmriprep` binary
+    (host paths) and the `docker run` path (container paths).
+    """
     args = [
         str(bids_root), str(output_dir), "participant",
         "--participant-label", label,
@@ -454,16 +453,13 @@ def _common_flags(anat_only, task, bids_filter_file, skull_strip_t1w,
     if stop_on_first_crash:
         flags.append("--stop-on-first-crash")
     if notrack:
-        # Disable sentry telemetry: its background network threads can segfault
+        # disable sentry telemetry: its background network threads can segfault
         # the main process during GC on Python 3.12 (cpython#111049-class crash).
         flags.append("--notrack")
     return flags
 
 
-# ---------------------------------------------------------------------------
 # Helpers
-# ---------------------------------------------------------------------------
-
 def _resolve_workdir(cli_value, config, studydir) -> Path:
     if cli_value is not None:
         return Path(cli_value).resolve()
@@ -473,15 +469,12 @@ def _resolve_workdir(cli_value, config, studydir) -> Path:
         if not c.is_absolute():
             c = studydir / c
         return c.resolve()
-    # Default OUTSIDE the output tree: fMRIprep's work dir must not live inside
-    # the dir bind-mounted as /out (nested mounts misbehave), and heavy work
-    # dirs are a poor fit for some networked study filesystems. Namespaced by
-    # study so multiple studies don't collide. Override via tools.fmriprep.workdir.
+    # default OUTSIDE the output tree
     return (Path.home() / ".cache" / "anatprep" / studydir.name / "fmriprep_work").resolve()
 
 
 def _read_kwargs_file(kwargs_file, logger) -> List[str]:
-    """Whitespace-split extra fMRIprep args from a file ('#' comments ignored)."""
+    # whitespace-split extra fMRIprep args from a file ('#' comments ignored
     if kwargs_file is None:
         return []
     p = Path(kwargs_file)
@@ -499,7 +492,8 @@ def _read_kwargs_file(kwargs_file, logger) -> List[str]:
 
 
 def _clean_subject_workdir(workdir: Path, label: str, logger) -> None:
-    """Remove this participant's fMRIprep workflow folder(s) so the next run
+    """
+    remove this participant's fMRIprep workflow folder(s) so the next run
     re-imports updated FreeSurfer surfaces. Leaves other participants intact.
     Matches both the pre-24.x (`single_subject_<label>_wf`) and current
     (`sub_<label>_wf`) naming.

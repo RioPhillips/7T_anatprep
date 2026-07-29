@@ -67,7 +67,7 @@ echo "[sanlm_bias] Log file:   $LOGFILE"
 # Generate addpath block 
 # ============================================================================
 if [[ $USE_MCR -eq 1 ]]; then
-  ADDPATH_BLOCK="% MCR mode: SPM and CAT12 are bundled in the standalone — no addpath needed."
+  ADDPATH_BLOCK="% MCR mode: SPM and CAT12 are bundled in the standalone. No addpath needed."
 else
   ADDPATH_BLOCK="addpath('${SPM_PATH}');
 addpath(fullfile('${SPM_PATH}', 'toolbox', 'cat12'));"

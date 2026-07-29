@@ -30,7 +30,7 @@ from anatprep.commands.mask import _find_script
 
 
 def _check_cat12_outputs(cat12_dir: Path) -> Tuple[bool, str]:
-    """Return (success, message). Success == True iff p1/p2/p3 tissue maps exist."""
+    # success == True iff p1/p2/p3 tissue maps exist
     mri_dir = cat12_dir / "mri"
     if not mri_dir.exists():
         return False, "mri/ directory not created"
@@ -123,18 +123,18 @@ def run_cat12(
         if matlab_failed:
             logger.warning(
                 f"MATLAB/CAT12 returned an error but tissue maps exist ({msg}). "
-                "The error likely occurred during QC/reporting (non-fatal)."
+                "The error likely occurred during QC/reporting."
             )
         else:
             logger.info(f"CAT12 complete: {msg}")
     else:
-        # Genuine failure — no tissue maps produced.
+        # no tissue maps produced.
         raise RuntimeError(
             f"CAT12 failed and did not produce tissue maps: {msg}. "
             f"Check logs in: {cat12_log_dir}"
         )
 
-    # ── copy local logs to central log dir if needed ───────────────────
+    # copy local logs to central log dir if needed 
     local_log_dir = output_dir / "logs"
     if (
         log_dir

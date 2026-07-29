@@ -154,9 +154,7 @@ def run_freesurfer(
         )
 
 
-# ---------------------------------------------------------------------------
-# Initial mode
-# ---------------------------------------------------------------------------
+# initial mode
 
 def _run_initial(
     *,
@@ -214,9 +212,7 @@ def _run_initial(
     logger.info(f"Initial recon-all complete for {subject_id}")
 
 
-# ---------------------------------------------------------------------------
-# Rerun mode
-# ---------------------------------------------------------------------------
+# rerun mode
 
 def _run_rerun(
     *,
@@ -275,9 +271,7 @@ def _run_rerun(
     logger.info(f"Rerun complete for {subject_id}")
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+# helpers
 
 def _reuse_flair_flag(subj_dir: Path, logger) -> list:
     """Re-add -FLAIRpial on a rerun if the FLAIR was conformed into mri/FLAIR.mgz."""
@@ -307,7 +301,7 @@ def _warn_missing_license(config: dict, logger) -> None:
 
 
 def _refuse_if_running(subj_dir: Path, logger) -> None:
-    # Refuse to act if recon-all looks like it is mid-run
+    # refuse to act if recon-all looks like it is mid-run
     if not subj_dir.exists():
         return
     scripts = subj_dir / "scripts"

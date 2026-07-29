@@ -1,11 +1,10 @@
 """
-brainmask-edit command: manually edit a FreeSurfer subject's brainmask.mgz
+brainmask-edit command to manually edit a FreeSurfer subject's brainmask.mgz
 or wm.mgz in ITK-Snap.
 
-ITK-Snap reads NIfTI (not FreeSurfer .mgz) and edits a single segmentation
-layer per session, so this command:
+ITK-Snap reads .nii (not .mgz) so this command:
 
-  1. Converts the target volume (.mgz) and an anatomical reference to NIfTI
+  1. Converts the target volume (.mgz) and an anatomical reference to .nii
      via FreeSurfer's mri_convert.
   2. Opens ITK-Snap with the reference as the greyscale image and the target
      as the editable segmentation.
@@ -16,8 +15,8 @@ Because ITK-Snap edits one layer per session, pick the volume with --target:
     --target brainmask   edit mri/brainmask.mgz   (-> rerun --edit pial)
     --target wm          edit mri/wm.mgz          (-> rerun --edit wm)
 
-To inspect the reconstructed surfaces (which ITK-Snap cannot render), use
-`anatprep view-surfaces` (freeview).
+To see the constructed surfaces (has to be done in freeview), use
+`anatprep view-surfaces`.
 
 Usage:
   anatprep brainmask-edit FS_SUBJECT_DIR [--target brainmask|wm]
@@ -121,7 +120,8 @@ def run_brainmask_edit(
 # Helpers
 
 def _preserve_original(target_mgz: Path, logger) -> None:
-    """Copy the original .mgz to <name>.mgz.bak before it is overwritten.
+    """
+    copies the original .mgz to <name>.mgz.bak before it is overwritten.
 
     Only writes the backup if it doesn't already exist.
     """
@@ -133,7 +133,7 @@ def _preserve_original(target_mgz: Path, logger) -> None:
     logger.info(f"Preserved original -> {backup.name}")
 
 def _reference_volume(mri: Path, target: str) -> Path:
-    """Pick a greyscale background that isn't the volume being edited."""
+    # pick a greyscale background that isn't the volume being edited.
     if target == "wm":
         # show the brain anatomy under the WM labels
         candidates = ("brainmask.mgz", "norm.mgz", "T1.mgz")
@@ -148,7 +148,7 @@ def _reference_volume(mri: Path, target: str) -> Path:
 
 
 def _mri_convert(src: Path, dst: Path, logger, out_dtype: Optional[str] = None) -> None:
-    """Convert between .mgz and NIfTI with mri_convert (geometry preserved)."""
+    # convert between .mgz and .nii with mri_convert
     cmd = ["mri_convert", str(src), str(dst)]
     if out_dtype:
         cmd += ["-odt", out_dtype]
@@ -174,6 +174,6 @@ def _refuse_if_running(fs_subject_dir: Path) -> None:
         if flag.exists():
             raise RuntimeError(
                 f"recon-all appears to be running ({flag} present). "
-                f"Refusing to open the editor. If recon-all is not running, "
-                f"delete that flag file manually."
+                f"If recon-all is not running, "
+                f"delete that flag file manually and retry."
             )

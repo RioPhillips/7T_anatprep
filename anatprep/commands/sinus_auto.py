@@ -1,11 +1,11 @@
 """
 sinus-auto command: auto-generate a sagittal sinus exclusion mask.
 
-Pipeline:
+Process:
   1. Register FLAIR --> T1w (FLIRT, 6-DOF, mutual info)
   2. Multiply registered FLAIR by the brain mask (kills skull signal)
-  3. Run BET on the masked FLAIR, the resulting mask naturally excludes the sinus
-  4. Dilate with MRtrix `maskfilter`
+  3. Run BET on the masked FLAIR, the resulting mask excludes the sinus
+  4. (optionally) Dilate with MRtrix `maskfilter` 
 
 Usage:
   anatprep sinus-auto --t1w <T1W> --flair <FLAIR> --mask <BRAINMASK> \\

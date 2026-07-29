@@ -8,8 +8,7 @@ Loads (read-only QC):
     surf/{l,r}h.pial         red edges
     surf/{l,r}h.inflated     hidden by default
 
-This is the surface-inspection counterpart to `brainmask-edit` (which does
-the voxel editing in ITK-Snap). Inspect here to decide whether the surfaces
+This is the surface-inspection counterpart to `brainmask-edit`. Inspect here to decide whether the surfaces
 need correcting, then make the brainmask/wm edits with `brainmask-edit`.
 
 Usage:

@@ -76,9 +76,7 @@ def run_mask(
         _run_spm(input_image, output_image, logger, log_dir)
 
 
-# ---------------------------------------------------------------------------
 # apply-mask: bake a mask into an image (pial edit before FreeSurfer)
-# ---------------------------------------------------------------------------
 
 def run_apply_mask(
     input_image: Path,
@@ -93,14 +91,6 @@ def run_apply_mask(
     """
     Apply a mask to an image by KEEPING voxels where mask > 0 and zeroing
     the rest, then (optionally) winsorize/rescale/recast.
-
-    The mask FOREGROUND is kept. For the sinus/dura-excluding brain mask
-    produced by sinus-auto / sinus-edit, this zeros the sinus, dura, and
-    everything outside the brain, leaving a clean T1w for recon-all. (Note
-    this also strips the skull; recon-all tolerates skull-stripped input.)
-
-    `winsorize` is off by default because `denoise` already runs WSD;
-    enabling it here would truncate intensities a second time.
     """
     input_image = Path(input_image).resolve()
     mask = Path(mask).resolve()
@@ -140,7 +130,7 @@ def run_apply_mask(
     logger.info(f"Voxels kept (mask>0): {n_kept} / {n_total}")
     if n_kept == 0:
         raise RuntimeError(
-            "Mask is empty (no voxels > 0); refusing to write an all-zero image. "
+            "Mask is empty (no voxels > 0); refusing to write an all-zero image."
             "Check the mask polarity (foreground must be the region to KEEP)."
         )
 
@@ -155,9 +145,7 @@ def run_apply_mask(
         logger.info("Applied WSD (winsorize -> rescale -> uint16)")
 
 
-# ---------------------------------------------------------------------------
 # BET backend
-# ---------------------------------------------------------------------------
 
 _BET_FRAC = "0.3"
 _BET_GRAD = "-0.1"
@@ -199,9 +187,7 @@ def _run_bet(input_image: Path, output_image: Path, logger) -> None:
     logger.info(f"Mask written: {output_image.name}")
 
 
-# ---------------------------------------------------------------------------
 # SPM backend
-# ---------------------------------------------------------------------------
 
 def _run_spm(input_image: Path, output_image: Path, logger, log_dir: Optional[Path] = None) -> None:
     studydir = resolve_studydir()
@@ -217,7 +203,7 @@ def _run_spm(input_image: Path, output_image: Path, logger, log_dir: Optional[Pa
 
     script = _find_script("spm_mask.sh")
 
-    # Use central log dir if available, otherwise fall back to output dir
+    # central log dir if available, otherwise fall back to output dir
     matlab_log_dir = str(log_dir) if log_dir else str(output_image.parent)
 
     cmd = [

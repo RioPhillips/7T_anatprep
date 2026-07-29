@@ -59,7 +59,7 @@ from anatprep.core import (
 
 
 def _check_external(binary: str, package: str) -> None:
-    """Raise if *binary* is not on PATH."""
+    # raise if *binary* is not on PATH
     if shutil.which(binary) is None:
         raise RuntimeError(f"'{binary}' not found in PATH. Install {package}.")
 
@@ -73,14 +73,15 @@ def _register_b1(
     logger,
     force: bool = False,
 ) -> Path:
-    """Register B1 magnitude to *ref* (INV1) and apply the transform to the
+    """
+    register B1 magnitude to *ref* (INV1) and apply the transform to the
     B1 map.  Returns the path to the registered B1 map.
 
     Intermediate outputs
     --------------------
-    <out_dir>/<b1mag_stem>_space-inv1.nii.gz   – registered magnitude (QC)
-    <out_dir>/../xfm/<b1mag_stem>_space-inv1.mat – FLIRT matrix
-    <out_dir>/<prefix>_desc-reg_TB1map.nii.gz  – registered B1 map (used)
+    <out_dir>/<b1mag_stem>_space-inv1.nii.gz   -> registered magnitude (QC)
+    <out_dir>/../xfm/<b1mag_stem>_space-inv1.mat -> FLIRT matrix
+    <out_dir>/<prefix>_desc-reg_TB1map.nii.gz  -> registered B1 map (used)
     """
     _check_external("flirt", "FSL")
 
@@ -92,7 +93,7 @@ def _register_b1(
     mag_reg = out_dir / f"{b1mag_stem}_space-inv1.nii.gz"
     b1_reg = out_dir / f"{prefix}_desc-reg_TB1map.nii.gz"
 
-    # --- step 1: estimate transform (magnitude --> INV1) --------------------
+    #  step 1: estimate transform (magnitude --> INV1) 
     have_cached = mag_reg.exists() and xfm_mat.exists()
     if have_cached and not force:
         logger.info(f"Reusing cached B1-mag registration: {xfm_mat.name}")
@@ -115,7 +116,7 @@ def _register_b1(
         logger.info(f"  --> {mag_reg.name}")
         logger.info(f"  --> {xfm_mat.name}")
 
-    # --- step 2: apply transform to actual B1 map -------------------------
+    # step 2: apply transform to actual B1 map 
     if b1_reg.exists() and not force:
         logger.info(f"Reusing cached registered B1 map: {b1_reg.name}")
     else:
@@ -152,7 +153,7 @@ def run_pymp2rage(
     b1map = Path(b1map).resolve() if b1map else None
     b1mag = Path(b1mag).resolve() if b1mag else None
 
-    # Validate B1 argument combinations
+    # validate B1 argument combinations
     if b1mag and not b1map:
         raise ValueError(
             "--b1mag requires --b1map. Provide the B1 map alongside its "
@@ -164,7 +165,7 @@ def run_pymp2rage(
 
     logger, log_dir = setup_command_logging("pymp2rage", inv1_mag, verbose=verbose)
 
-    # Verify all four inversion inputs share sub/ses/run/desc entities
+    # check that all four inversion inputs share sub/ses/run/desc entities
     inputs = [inv1_mag, inv1_phase, inv2_mag, inv2_phase]
     try:
         entities = check_consistent_entities(inputs)
@@ -172,7 +173,7 @@ def run_pymp2rage(
         logger.error(str(e))
         raise
 
-    # Pull out the condition tag (if any) — keep it out of the prefix
+    # if exists, pull out  condition tag and keep it out of the prefix
     cond = entities.pop("desc", None)
 
     prefix = bids_prefix(entities, fallback=input_stem(inv1_mag))
@@ -182,11 +183,11 @@ def run_pymp2rage(
     if entities:
         logger.info(f"  entities: {entities}")
 
-    # Build the desc portion of output filenames
+    # build the desc portion of output filenames
     desc_base = f"{cond}-pymp2rage" if cond else "pymp2rage"
     desc_b1   = f"{cond}-pymp2rageb1corr" if cond else "pymp2rageb1corr"
 
-    # Output paths
+    # output paths
     t1w_out      = out_dir / f"{prefix}_desc-{desc_base}_T1w.nii.gz"
     t1map_out    = out_dir / f"{prefix}_desc-{desc_base}_T1map.nii.gz"
     mask_out     = out_dir / f"{prefix}_desc-{desc_base}_mask.nii.gz"
@@ -205,7 +206,7 @@ def run_pymp2rage(
         logger.info("All outputs already exist. Nothing to do.")
         return
 
-    # Acquisition parameters, still loaded from code/mp2rage.yaml
+    # parameters, still loaded from code/mp2rage.yaml
     studydir = resolve_studydir()
     params = load_mp2rage_params(studydir)
     if params is None:
@@ -255,7 +256,7 @@ def run_pymp2rage(
         logger.info(f"  --> {mask_out.name}")
 
     if b1map and need_b1corr:
-        # Register B1 map if magnitude companion provided
+        # register B1 map if magnitude companion provided
         if b1mag:
             b1map_for_corr = _register_b1(
                 b1mag=b1mag,
