@@ -238,10 +238,6 @@ def setup_logging(
     return logger
 
 
-# ---------------------------------------------------------------------------
-# Command runner
-# ---------------------------------------------------------------------------
-
 def run_command(
     cmd: List[str],
     logger: logging.Logger,
@@ -250,8 +246,9 @@ def run_command(
     check: bool = True,
     env: Optional[Dict[str, str]] = None,
     cwd: Optional[Path] = None,
+    stream: bool = True,
 ) -> subprocess.CompletedProcess:
-    """Run a shell command with logging."""
+
     logger.debug(f"Running: {' '.join(cmd)}")
 
     run_env = os.environ.copy()
@@ -269,6 +266,26 @@ def run_command(
         result = subprocess.run(
             cmd, capture_output=True, text=True, env=run_env, cwd=cwd,
         )
+    elif stream:
+        # Merge stderr into stdout and relay each line to the logger, so the
+        # subprocess output is captured by every handler (console + file).
+        proc = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, bufsize=1, env=run_env, cwd=cwd,
+        )
+        lines: List[str] = []
+        try:
+            for line in proc.stdout:          # type: ignore[union-attr]
+                line = line.rstrip("\n")
+                lines.append(line)
+                logger.info(line)
+        finally:
+            if proc.stdout:
+                proc.stdout.close()
+            returncode = proc.wait()
+        result = subprocess.CompletedProcess(
+            cmd, returncode, "\n".join(lines), None
+        )
     else:
         result = subprocess.run(cmd, text=True, env=run_env, cwd=cwd)
 
@@ -278,8 +295,7 @@ def run_command(
             logger.error(f"See log: {log_file}")
         raise RuntimeError(f"Command failed: {' '.join(cmd)}")
 
-    return result
-
+    return result   
 
 # ---------------------------------------------------------------------------
 # Log copying helper
