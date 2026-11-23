@@ -2,15 +2,15 @@
 
 Anatomical preprocessing pipeline for **7T MP2RAGE** data.
 
-It takes BIDS-organised rawdata (e.g. from [7T_BIDS_Organiser](https://github.com/RioPhillips/7T_BIDS_Organiser)) and carries a single anatomical run through pymp2rage fitting, brain masking, background/SANLM denoising, CAT12 segmentation, sinus/dura removal, FreeSurfer `recon-all`, and finally fMRIprep. The design follows the [Knapen lab's anatomical workflow](https://github.com/tknapen/tknapen.github.io/wiki/Anatomical-workflows) and Jurjen Heij's [fmriproc](https://github.com/gjheij/fmriproc) pipeline.
+It takes BIDS-organised rawdata (e.g. from [7T_BIDS_Organiser](https://github.com/RioPhillips/7T_BIDS_Organiser)) and carries a single anatomical run through pymp2rage fitting, brain masking, background/SANLM denoising, CAT12 segmentation, sinus/dura removal, FreeSurfer `recon-all`, and finally fMRIprep. The design is heavily inspired and copied from the [Knapen lab's anatomical workflow](https://github.com/tknapen/tknapen.github.io/wiki/Anatomical-workflows) and Jurjen Heij's [fmriproc](https://github.com/gjheij/fmriproc) pipeline. All errors I claim as my own. 
 
-The guiding idea (from Heij's notes) is that FreeSurfer/BET/CAT12 are very sensitive to the INV1×INV2 noise that pymp2rage leaves around the head. So the early steps exist mostly to **give those tools a clean, sharp brain to work on**: mask from INV2, suppress background noise, denoise inside the brain with SANLM, then hand-correct the brain mask before surfaces are reconstructed.
+The guiding idea (from Heij's notes) is that FreeSurfer/BET/CAT12 are very sensitive to the INV1×INV2 noise that pymp2rage leaves around the head. So the early steps exist mostly to give those tools a clean, sharp brain to work on: mask from INV2, suppress background noise, denoise inside the brain with SANLM, then hand-correct the brain mask before surfaces are reconstructed.
 
 ---
 
 ## Overall pipeline 
 
-Each step is a separate command, run **per subject, per MP2RAGE run**. Steps with ✋ require manual interaction.
+Each step is a separate command, run per subject, per MP2RAGE run. Steps with (M) require manual interaction.
 
 ```
 pymp2rage        T1w (UNI) + T1map (+ B1-corrected) from the 4 inversion images
@@ -23,20 +23,20 @@ cat12            CAT12 tissue segmentation; produces the p0 brainmask
    │
 sinus-auto       FLAIR-based sagittal-sinus / dura exclusion mask
    │
-sinus-edit  ✋   refine the sinus mask, and hand-edit the CAT12 p0 brainmask
+sinus-edit  (M)   refine the sinus mask, and hand-edit the CAT12 p0 brainmask
    │
 apply-mask       bake the edited brainmask into the denoised T1w --> desc-masked_T1w
    │
-(isotropic) ✋   mri_convert the masked T1w to isotropic voxels  ← REQUIRED, see notes
+(isotropic) (M)   mri_convert the masked T1w to isotropic voxels  <-- REQUIRED, see notes
    │
 run-freesurfer   recon-all on the masked, isotropic T1w (+ FLAIR for pial)
    │
-view-surfaces ✋ / brainmask-edit ✋ / run-freesurfer --edit   (iterate until clean)
+view-surfaces (M) / brainmask-edit (M) / run-freesurfer --edit   (iterate until clean)
    │
 run-fmriprep     terminal step; reuses the recon-all from derivatives/freesurfer
 ```
 
-Two optional Nighres steps (`nighres-skullstrip`, `nighres-dura`) are available as alternatives/supplements to `mask` if you have Nighres installed.
+Two optional Nighres steps (`nighres-skullstrip`, `nighres-dura`) are available as alternatives/supplements to `mask` if you have Nighres installed. 
 
 ---
 
@@ -59,7 +59,7 @@ pip install -e ".[dev]"
 pip install -e ".[nighres]"
 ```
 
-Every subcommand is also installed as a **standalone console script**, so `anatprep pymp2rage ...` and `pymp2rage ...` both work. The same for `mask`, `denoise`, `cat12`, `sinus-auto`, `sinus-edit`, `apply-mask`, `run-freesurfer`, `brainmask-edit`, `view-surfaces`, `run-fmriprep`, `nighres-dura`, `nighres-skullstrip`.
+Every subcommand is also installed as a standalone console script, so `anatprep pymp2rage ...` and `pymp2rage ...` both work. The same for `mask`, `denoise`, `cat12`, `sinus-auto`, `sinus-edit`, `apply-mask`, `run-freesurfer`, `brainmask-edit`, `view-surfaces`, `run-fmriprep`, `nighres-dura`, `nighres-skullstrip`.
 
 ### External dependencies
 
@@ -102,7 +102,7 @@ my_study/
     └── logs/anatprep/
 ```
 
-Session-based studies (`sub-XXXX/ses-YY/anat`) are also supported. pymp2rage needs **both magnitude and phase** for each inversion.
+Session-based studies (`sub-XXXX/ses-YY/anat`) are also supported. pymp2rage needs both magnitude and phase for each inversion.
 ### `code/anatprep.yml`
 
 ```yaml
@@ -124,6 +124,8 @@ tools:
     output_spaces: "fsnative"
     shm_size: "8g"         # raw `docker run --shm-size`; the 64MB default starves MultiProc
     workdir: null          # default ~/.cache/anatprep/<study>/fmriprep_work
+    stc_resample:          # only used with run-fmriprep --stc-resample
+      skip_volumes: 0      # first resampled volume at skip_volumes x acquisition TR
 
   nighres:
     dura_threshold: 0.8    # used by nighres-dura
@@ -186,7 +188,7 @@ anatprep mask --bet  INV2_mag.nii.gz  out_desc-bet_mask.nii.gz      # FSL BET (d
 anatprep mask --spm  INV2_mag.nii.gz  out_desc-spmmask_mask.nii.gz  # SPM GM+WM segmentation
 ```
 
-`OUTPUT_IMAGE` is optional; if omitted it is written to CWD. BET runs with `-f 0.3 -g -0.1`.
+`OUTPUT_IMAGE` is optional; if omitted it is written to CWD. BET runs with `-f 0.3 -g -0.1` as default.
 
 ### denoise
 
@@ -206,7 +208,7 @@ Three stages: (1) Replaces out-of-brain voxels with an INV2-weighted blend so so
 anatprep cat12 sub-XX_run-1_desc-denoised_T1w.nii.gz derivatives/anatprep/sub-XX/cat12/run-1
 ```
 
-CAT12 tissue segmentation in **brain mode** (`APP=0`, `NCstr=0`, `biasstr=eps`, etc.) so it doesn't re-process the already denoised/B1-corrected image. Produces `p1/p2/p3` tissue maps, the `p0` label image, and a binarised `maskp0...` brain mask in `cat12/run-1/mri/`. The command tolerates a MATLAB crash during QC/reporting as long as the tissue maps exist.
+CAT12 tissue segmentation in brain mode (`APP=0`, `NCstr=0`, `biasstr=eps`, etc.) so it doesn't re-process the already denoised/B1-corrected image. Produces `p1/p2/p3` tissue maps, the `p0` label image, and a binarised `maskp0...` brain mask in `cat12/run-1/mri/`. The command tolerates a MATLAB crash during QC/reporting as long as the tissue maps exist.
 
 ### sinus-auto
 
@@ -220,15 +222,15 @@ anatprep sinus-auto \
   --out   sub-XX_run-1_desc-sinusauto_mask.nii.gz
 ```
 
-Registers FLAIR-->T1w, multiplies by the brain mask, then runs BET on the masked FLAIR — because the sagittal sinus is dark on FLAIR, it falls out of the resulting mask naturally (an "anti-sinus" mask). A dilated copy is written alongside as `<out>_dilated.nii.gz`. Without `--flair` it falls back to BET on the T1w as a starting point for manual editing.
+Registers FLAIR-->T1w, multiplies by the brain mask, then runs BET on the masked FLAIR -- because the sagittal sinus is dark on FLAIR, it falls out of the resulting mask naturally. A dilated copy is written alongside as `<out>_dilated.nii.gz`. Without `--flair` it falls back to BET on the T1w as a starting point for manual editing.
 
-### sinus-edit ✋
+### sinus-edit (M)
 
 ```bash
 anatprep sinus-edit sub-XX_run-1_desc-denoised_T1w.nii.gz sub-XX_run-1_desc-sinusfinal_mask.nii.gz
 ```
 
-Opens the mask over the T1w for hand-editing (creates an empty mask if absent). The editor is chosen by `tools.editing_software` (`freeview` or `itksnap`). This is also where you refine the CAT12 `p0` brainmask to excise sinus/dura — save the corrected brainmask under a name that `apply-mask` will pick up (the run script expects `edit_new_maskp0<...>.nii.gz`).
+Opens the mask over the T1w for hand-editing (creates an empty mask if absent). The editor is chosen by `tools.editing_software` (`freeview` or `itksnap`). This is also where you refine the CAT12 `p0` brainmask to excise sinus/dura -- save the corrected brainmask under a name that `apply-mask` will pick up (the run script expects `edit_new_maskp0<...>.nii.gz`).
 
 ### apply-mask
 
@@ -239,7 +241,7 @@ anatprep apply-mask \
   --out   sub-XX_run-1_desc-masked_T1w.nii.gz
 ```
 
-Keeps voxels where `mask > 0`, zeros the rest. This bakes the **hand-corrected brainmask** into the T1w, removing dura/sinus/skull so they can't be pulled into the pial surface. No winsorize by default (`denoise` already ran WSD); `-w` is available if you need it.
+Keeps voxels where `mask > 0`, zeros the rest. This bakes the hand-corrected brainmask into the T1w, removing dura/sinus/skull so they can't be pulled into the pial surface. No winsorize by default (`denoise` already ran WSD); `-w` is available if you need it.
 
 ### run-freesurfer
 
@@ -261,7 +263,7 @@ Parallelism: `--cpus N` sets `-openmp N`; add `--parallel` to also run lh/rh con
 
 `--no-fix-ga` disables the gyrus-ambiens cortex-label fix. FreeSurfer 8.x hard-fails on some subjects (zero voxels for the GA label).
 
-### view-surfaces ✋ / brainmask-edit ✋
+### view-surfaces (M) / brainmask-edit (M)
 
 ```bash
 anatprep view-surfaces  derivatives/freesurfer/sub-XX                 # inspect white/pial in freeview
@@ -281,6 +283,13 @@ Assembles a small BIDS tree (the cleaned anat renamed to a raw-style `T1w`, plus
 
 Key options: `--anat-desc denoised|masked` selects which anatprep derivative to use (`masked` auto-sets `--skull-strip-t1w skip`); `--anat-only` for surfaces only; `-j/--cpus`, `--omp-nthreads`, `--mem-mb`; `-u/--bids-filter-file` for a pybids query JSON; `-k/--kwargs-file` for extra fMRIprep flags (one per line, `#` comments allowed); `--clean-workdir` to wipe this subject's workflow folder for a fresh start; `--notrack` (on by default, disables sentry telemetry whose background threads can segfault Python 3.12 during GC).
 
+**Slice-time resampling (study-dependent, off by default).** `--stc-resample [TR]` slice-time corrects each BOLD run and resamples it onto a uniform grid with the given TR (bare flag: 0.9 s) *before* fMRIprep, for studies whose design needs that sampling. Slice times and the acquisition TR come from the BOLD sidecar (`SliceTiming`, `RepetitionTime`; populate with `bids7t slicetime`). The first output volume sits at `tools.fmriprep.stc_resample.skip_volumes` × acquisition TR (default 0; the reference script used 3), so in downstream models volume *k* is at `t = FirstVolumeTime + k·TR` after the start of the first acquired volume (recorded in the sidecar under `AnatprepSTCResample`; `events.tsv` onsets are not shifted). The sidecar's `RepetitionTime` is set to the new TR, `SliceTiming` is dropped and fMRIprep gets `--ignore slicetiming`, so no second STC happens. Resampled runs are cached in `derivatives/fmriprep/sourcedata/stc_resample/` and reused while source and parameters are unchanged (keeps `--force` resumes working); delete that folder to force regeneration. With `--bids-dir` the prebuilt tree is left untouched and the subject is mirrored into `--input-tree` first.
+
+```bash
+anatprep run-fmriprep 7T079C02 -n MR1 --anat-desc masked --stc-resample        # 0.9 s
+anatprep run-fmriprep 7T079C02 -n MR1 --anat-desc masked --stc-resample 1.0    # other TR
+```
+
 ### nighres-skullstrip / nighres-dura (optional)
 
 ```bash
@@ -297,7 +306,7 @@ Nighres-based MP2RAGE skull-stripping and dura estimation, for studies that pref
  
 ### 1. Make the masked T1w isotropic — REQUIRED
  
-`apply-mask` keeps the input voxel grid, and fMRIprep has reliably **crashed** unless the masked T1w is isotropic first. Rename the masked output and resample with `mri_convert` (this isotropic file is what then feeds `run-freesurfer` and `run-fmriprep`):
+`apply-mask` keeps the input voxel grid, and fMRIprep has reliably crashed unless the masked T1w is isotropic first. Rename the masked output and resample with `mri_convert` (this isotropic file is what then feeds `run-freesurfer` and `run-fmriprep`):
  
 ```bash
 cd derivatives/anatprep/sub-XX
@@ -317,7 +326,7 @@ Single-threaded is the only configuration that has run to completion, higher `-j
 anatprep run-fmriprep 7T049C10 --anat-desc masked -j 1 -v --force
 ```
  
-If a run dies partway, re-issue the **same command** with `--force` which stops anatprep from skipping the already-started subject and fMRIprep resumes from its persistent work directory rather than starting over.
+If a run dies partway, re-issue the same command with `--force` which stops anatprep from skipping the already-started subject and fMRIprep resumes from its persistent work directory rather than starting over.
  
 ---
 
@@ -333,7 +342,7 @@ derivatives/
 │   ├── cat12/run-1/ mri/ p0,p1,p2,p3, maskp0..., edit_new_maskp0...  (edited brainmask)
 │   ├── xfm/         cached FLIRT matrices
 │   ├── sub-XX_run-1_desc-denoised_T1w.nii.gz
-│   └── sub-XX_run-1_desc-masked_T1w.nii.gz   (← made isotropic before recon-all)
+│   └── sub-XX_run-1_desc-masked_T1w.nii.gz   (<-- made isotropic before recon-all)
 ├── freesurfer/sub-XX/        recon-all output (reused by fMRIprep)
 ├── fmriprep/                 fMRIprep derivatives + sourcedata/bids (assembled input tree)
 └── logs/anatprep/sub-XX/     <command>_<timestamp>.log

@@ -1,5 +1,5 @@
 """
-run-fmriprep command: wraps fMRIprep as the terminal step of the pipeline.
+run-fmriprep command: wraps fMRIprep as the last step of the pipeline.
 
 It assembles a small BIDS input tree containing the *cleaned*
 anatomical (desc-masked by default) plus the subject's func/fmap mirrored
@@ -16,6 +16,17 @@ Usages
 
 The assembled tree lives at <output_dir>/sourcedata/bids and is rebuilt per run.
 
+Optional slice-time resampling (--stc-resample [TR], study-dependent)
+  Each BOLD run in the input tree is slice-time corrected and resampled onto a
+  uniform grid with the given TR (default 0.9 s) before fMRIprep sees it (see
+  anatprep.core.slicetime). The first output volume sits at skip_volumes * TR
+  (tools.fmriprep.stc_resample.skip_volumes, default 0). Resampled runs are
+  cached under <output_dir>/sourcedata/stc_resample and reused while the source
+  and parameters are unchanged, so re-assembly keeps file mtimes stable and
+  fMRIprep can still resume from the work dir. fMRIprep gets --ignore slicetiming.
+  With --bids-dir the prebuilt tree is never modified: the subject is mirrored
+  into --input-tree and the runs are replaced there.
+
 Usage:
   run-fmriprep SUBJECT [--anat FILE | --anat-desc denoised|masked]
                [--session SES] [--anat-only] [--task TASK]
@@ -25,6 +36,7 @@ Usage:
                [--input-tree DIR]
                [--cpus N] [--omp-nthreads N] [--mem-mb M]
                [--output-spaces "fsnative ..."] [--kwargs-file FILE]
+               [--stc-resample [TR]]
                [--notrack/--track] [--local] [--clean-workdir] [--force] [--verbose]
 
 By default fMRIprep runs via `docker run` using the image in
@@ -52,6 +64,10 @@ from anatprep.core import (
 
 _ANAT_DESCS = ("denoised", "masked")
 _SKULL_STRIP = ("skip", "auto", "force")
+# leading acquired volumes before the first resampled volume
+# (reference script used blank_time_points_num = 3; 0 keeps volume 0 at the
+# first acquired volume, so events.tsv onsets need no shift)
+_STC_DEFAULT_SKIP = 0
 
 
 
@@ -74,6 +90,7 @@ def run_fmriprep(
     omp_nthreads: Optional[int] = None,
     mem_mb: Optional[int] = None,
     kwargs_file: Optional[Path] = None,
+    stc_resample: Optional[float] = None,
     local: bool = False,
     notrack: bool = True,
     stop_on_first_crash: bool = True,
@@ -86,6 +103,8 @@ def run_fmriprep(
         raise ValueError(f"--anat-desc must be one of {_ANAT_DESCS}, got {anat_desc!r}")
     if skull_strip_t1w is not None and skull_strip_t1w not in _SKULL_STRIP:
         raise ValueError(f"--skull-strip-t1w must be one of {_SKULL_STRIP}")
+    if stc_resample is not None and stc_resample <= 0:
+        raise ValueError(f"--stc-resample TR must be > 0 seconds, got {stc_resample}")
 
     logger, _ = setup_command_logging(
         "fmriprep", Path(f"sub-{label}_desc-fmriprep.nii.gz"), verbose=verbose
@@ -153,6 +172,19 @@ def run_fmriprep(
     logger.info(f"Resources   : nthreads={cpus} omp={omp_nthreads} mem_mb={mem_mb}")
     logger.info(f"Output space: {output_spaces}")
 
+    # slice-time resampling (opt-in, study-dependent)
+    if stc_resample is not None and anat_only:
+        logger.info("--anat-only: no functional data, --stc-resample ignored.")
+        stc_resample = None
+    stc_skip = None
+    if stc_resample is not None:
+        stc_skip = int(config_get(config, "tools.fmriprep.stc_resample.skip_volumes",
+                                  default=_STC_DEFAULT_SKIP))
+        if stc_skip < 0:
+            raise ValueError(f"tools.fmriprep.stc_resample.skip_volumes must be >= 0, got {stc_skip}")
+        logger.info(f"STC resample: TR {stc_resample}s, first volume at {stc_skip} x acquisition TR "
+                    f"(tools.fmriprep.stc_resample.skip_volumes)")
+
     # skip / clean 
     report = output_dir / f"sub-{label}.html"
     subj_out = output_dir / f"sub-{label}"
@@ -165,12 +197,20 @@ def run_fmriprep(
     if clean_workdir:
         _clean_subject_workdir(workdir, label, logger)
 
-    #  assemble (or reuse) the BIDS input tree 
+    #  assemble (or reuse) the BIDS input tree
+    link_mode = "symlink" if local else "copy"
     if bids_dir is not None:
         bids_root = Path(bids_dir).resolve()
         if not bids_root.exists():
             raise FileNotFoundError(f"--bids-dir not found: {bids_root}")
-        logger.info(f"Using prebuilt BIDS input (assembly skipped): {bids_root}")
+        if stc_resample is None:
+            logger.info(f"Using prebuilt BIDS input (assembly skipped): {bids_root}")
+        else:
+            # never modify the prebuilt tree (it may hard-link rawdata): work on a mirror
+            bids_root = _shadow_bids_input(
+                src_root=bids_root, input_tree=input_tree, label=label,
+                link_mode=link_mode, logger=logger,
+            )
     else:
         anat_path = _resolve_anat(anat, anat_desc, studydir, label, session, logger)
         # a skull-stripped anat must skip fMRIprep's own brain extraction
@@ -178,10 +218,17 @@ def run_fmriprep(
             skull_strip_t1w = "skip"
             logger.info("masked anat is skull-stripped; defaulting "
                         "--skull-strip-t1w skip (override with --skull-strip-t1w).")
-        link_mode = "symlink" if local else "copy"
         bids_root = _assemble_bids_input(
             input_tree=input_tree, studydir=studydir, label=label, session=session,
             anat_path=anat_path, anat_only=anat_only, link_mode=link_mode,
+            logger=logger,
+        )
+
+    if stc_resample is not None:
+        _apply_stc_resample(
+            bids_root=bids_root, label=label, session=session, task=task,
+            cache_root=output_dir / "sourcedata" / "stc_resample",
+            new_tr=stc_resample, skip_volumes=stc_skip, link_mode=link_mode,
             logger=logger,
         )
 
@@ -189,6 +236,8 @@ def run_fmriprep(
         logger.info(f"--skull-strip-t1w {skull_strip_t1w}")
 
     extra = _read_kwargs_file(kwargs_file, logger)
+    if stc_resample is not None:
+        extra = _with_ignore_slicetiming(extra)
 
     # build & run 
     common = dict(
@@ -353,6 +402,109 @@ def _write_dataset_description(input_tree: Path) -> None:
         dd.write_text(json.dumps(
             {"Name": "anatprep fMRIprep input", "BIDSVersion": "1.8.0",
              "DatasetType": "raw"}, indent=2) + "\n")
+
+
+def _shadow_bids_input(*, src_root, input_tree, label, link_mode, logger) -> Path:
+    # mirror one subject (+ dataset-level files) of a prebuilt tree into
+    # input_tree, so --stc-resample can replace runs without touching the source
+    if (src_root == input_tree or input_tree.is_relative_to(src_root)
+            or src_root.is_relative_to(input_tree)):
+        raise RuntimeError(
+            f"--stc-resample with --bids-dir mirrors sub-{label} into --input-tree, which "
+            f"must not overlap the prebuilt tree:\n"
+            f"  --bids-dir   {src_root}\n  --input-tree {input_tree}"
+        )
+    src_sub = src_root / f"sub-{label}"
+    if not src_sub.exists():
+        raise FileNotFoundError(f"sub-{label} not found in --bids-dir {src_root}")
+    dst_sub = input_tree / f"sub-{label}"
+    if dst_sub.exists():
+        shutil.rmtree(dst_sub)
+    input_tree.mkdir(parents=True, exist_ok=True)
+    for f in src_root.iterdir():   # dataset_description.json, task-*_bold.json, ...
+        if f.is_file():
+            _place(f, input_tree / f.name, "copy")
+    _mirror_dir(src_sub, dst_sub, link_mode)
+    _write_dataset_description(input_tree)
+    logger.info(f"Prebuilt BIDS input {src_root} mirrored to {input_tree} for --stc-resample "
+                f"(the prebuilt tree is not modified)")
+    return input_tree
+
+
+# Slice-time resampling (--stc-resample)
+
+def _apply_stc_resample(
+    *, bids_root, label, session, task, cache_root, new_tr, skip_volumes, link_mode, logger
+) -> None:
+    """
+    Replace each BOLD run under bids_root/sub-<label> (and its sidecar) with a
+    slice-time corrected, uniformly resampled version. Outputs are cached in
+    cache_root (same relative paths) and reused while source + parameters are
+    unchanged. Tree files are unlinked before being replaced, so a symlink or
+    hard link into rawdata is never written through.
+    """
+    from anatprep.core.slicetime import (
+        sidecar_path, stc_is_current, stc_resample_bold, stc_signature,
+    )
+
+    bolds = []
+    for p in sorted((bids_root / f"sub-{label}").glob("**/func/*_bold.nii*")):
+        name = p.name
+        if not name.endswith((".nii", ".nii.gz")):
+            continue
+        if "_part-phase_" in name:
+            logger.info(f"STC resample: {name} is a phase image, left unchanged "
+                        f"(fMRIprep reads magnitude only).")
+            continue
+        if session and f"_ses-{session}_" not in name:
+            continue
+        if task and f"_task-{task}_" not in name:
+            continue
+        bolds.append(p)
+    if not bolds:
+        logger.warning(f"STC resample: no BOLD runs found under {bids_root / f'sub-{label}'}.")
+        return
+
+    logger.info(f"STC resample: {len(bolds)} run(s); cache {cache_root}")
+    for bold in bolds:
+        cached = cache_root / bold.relative_to(bids_root)
+        signature = stc_signature(bold, new_tr=new_tr, skip_volumes=skip_volumes)
+        if stc_is_current(cached, signature):
+            logger.info(f"  {bold.name}: reusing cached resampled run")
+        else:
+            logger.info(f"  {bold.name}: resampling ...")
+            prov = stc_resample_bold(bold, cached, new_tr=new_tr,
+                                     skip_volumes=skip_volumes, logger=logger)
+            msg = (f"  {bold.name}: {prov['SourceVolumes']} vols @ "
+                   f"{prov['SourceRepetitionTime']}s -> {prov['Volumes']} vols @ {new_tr}s, "
+                   f"first volume at t={prov['FirstVolumeTime']:.3f}s")
+            if prov["ExtrapolatedVolumesStart"]:
+                msg += (f"; first {prov['ExtrapolatedVolumesStart']} vol(s) extrapolated "
+                        f"before the latest slice's first sample")
+            if prov["ExtrapolatedVolumesEnd"]:
+                msg += (f"; last {prov['ExtrapolatedVolumesEnd']} vol(s) extrapolated "
+                        f"past the earliest slice's last sample")
+            logger.info(msg)
+        _place(cached, bold, link_mode)
+        tree_json = sidecar_path(bold)
+        if tree_json.exists() or tree_json.is_symlink():
+            tree_json.unlink()
+        shutil.copy2(sidecar_path(cached), tree_json)
+
+
+def _with_ignore_slicetiming(extra: List[str]) -> List[str]:
+    # fMRIprep's --ignore takes several values but only its last occurrence counts,
+    # so merge into one from --kwargs-file instead of passing a second --ignore
+    extra = list(extra)
+    if "--ignore" in extra:
+        i = extra.index("--ignore")
+        j = i + 1
+        while j < len(extra) and not extra[j].startswith("-"):
+            j += 1
+        if "slicetiming" not in extra[i + 1:j]:
+            extra.insert(i + 1, "slicetiming")
+        return extra
+    return extra + ["--ignore", "slicetiming"]
 
 
 # Command builders

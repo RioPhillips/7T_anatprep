@@ -9,7 +9,7 @@ from anatprep import __version__
 
 
 class HelpfulGroup(click.Group):
-    """Show help when no command is given."""
+    # Show help when no command is given
 
     def invoke(self, ctx):
         if not ctx.protected_args and not ctx.invoked_subcommand:
@@ -33,8 +33,7 @@ def cli():
       5. sinus-auto        - Auto-generate sinus exclusion mask
       6. sinus-edit        - Manual refinement in ITK-Snap
       7. run-freesurfer    - recon-all (initial or post-edit rerun)
-      8. brainmask-edit    - Manual brainmask/wm edits in freeview
-
+      8. fmriprep
     \b
     Commands read code/anatprep.yml and code/mp2rage.yaml from the
     study directory when MATLAB or MP2RAGE parameters are needed.
@@ -167,6 +166,13 @@ def apply_mask_cmd(input_image, mask, output_image, winsorize, lower, upper, for
 @click.option("--kwargs-file", "-k",
               type=click.Path(exists=True, dir_okay=False, path_type=Path), default=None,
               help="File of extra fMRIprep args appended verbatim ('#' comments ignored).")
+@click.option("--stc-resample", "stc_resample", type=float, default=None,
+              is_flag=False, flag_value=0.9, metavar="[TR]",
+              help="Slice-time correct and resample each BOLD run onto a uniform grid with "
+                   "this TR in seconds before fMRIprep (bare flag: 0.9). The first volume "
+                   "sits at tools.fmriprep.stc_resample.skip_volumes x acquisition TR "
+                   "(default 0). Needs SliceTiming in the BOLD sidecars (bids7t slicetime). "
+                   "Adds --ignore slicetiming. Off by default.")
 @click.option("--notrack/--track", "notrack", default=True, show_default=True,
               help="Disable fMRIprep's sentry telemetry (default). Use --track to re-enable.")
 @click.option("--local", is_flag=True, default=False,
@@ -177,8 +183,8 @@ def apply_mask_cmd(input_image, mask, output_image, winsorize, lower, upper, for
 @_common_options
 def fmriprep_cmd(subject, anat, anat_desc, session, anat_only, task, bids_filter_file,
                  skull_strip_t1w, bids_dir, output_dir, subjects_dir, workdir, input_tree,
-                 cpus, omp_nthreads, mem_mb, output_spaces, kwargs_file, notrack, local,
-                 clean_workdir, force, verbose):
+                 cpus, omp_nthreads, mem_mb, output_spaces, kwargs_file, stc_resample,
+                 notrack, local, clean_workdir, force, verbose):
     """
     Run fMRIprep.
 
@@ -195,6 +201,7 @@ def fmriprep_cmd(subject, anat, anat_desc, session, anat_only, task, bids_filter
       run-fmriprep 7T049C10 --anat-only             # surfaces only
       run-fmriprep 7T049C10 --anat-desc masked      # auto --skull-strip-t1w skip
       run-fmriprep 7T049C10 -u code/fmriprep_filter.json -j 8   # session/run filter
+      run-fmriprep 7T079C02 -n MR1 --stc-resample   # STC + resample BOLD to 0.9 s first
     """
     from anatprep.commands.fmriprep import run_fmriprep
     for s in [x.strip() for x in subject.split(",") if x.strip()]:
@@ -204,8 +211,9 @@ def fmriprep_cmd(subject, anat, anat_desc, session, anat_only, task, bids_filter
             workdir=workdir, input_tree=input_tree, anat_only=anat_only, task=task,
             bids_filter_file=bids_filter_file, skull_strip_t1w=skull_strip_t1w,
             output_spaces=output_spaces, cpus=cpus, omp_nthreads=omp_nthreads,
-            mem_mb=mem_mb, kwargs_file=kwargs_file, notrack=notrack, local=local,
-            clean_workdir=clean_workdir, force=force, verbose=verbose,
+            mem_mb=mem_mb, kwargs_file=kwargs_file, stc_resample=stc_resample,
+            notrack=notrack, local=local, clean_workdir=clean_workdir,
+            force=force, verbose=verbose,
         )
 # ---------------------------------------------------------------------------
 # nighres dura
