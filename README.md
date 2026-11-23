@@ -2,7 +2,7 @@
 
 Anatomical preprocessing pipeline for **7T MP2RAGE** data.
 
-It takes BIDS-organised rawdata (e.g. from [7T_BIDS_Organiser](https://github.com/RioPhillips/7T_BIDS_Organiser)) and carries a single anatomical run through pymp2rage fitting, brain masking, background/SANLM denoising, CAT12 segmentation, sinus/dura removal, FreeSurfer `recon-all`, and finally fMRIprep. The design is heavily inspired and copied from the [Knapen lab's anatomical workflow](https://github.com/tknapen/tknapen.github.io/wiki/Anatomical-workflows) and Jurjen Heij's [fmriproc](https://github.com/gjheij/fmriproc) pipeline. All errors I claim as my own. 
+It takes BIDS-organised rawdata (e.g. from [7T_BIDS_Organiser](https://github.com/RioPhillips/7T_BIDS_Organiser)) and carries a single anatomical run through pymp2rage fitting, brain masking, background/SANLM denoising, CAT12 segmentation, sinus/dura removal, FreeSurfer `recon-all`, and finally fMRIprep. The design is heavily inspired and/or copied from the [Knapen lab's anatomical workflow](https://github.com/tknapen/tknapen.github.io/wiki/Anatomical-workflows) and Jurjen Heij's [fmriproc](https://github.com/gjheij/fmriproc) pipeline. All errors I claim as my own. 
 
 The guiding idea (from Heij's notes) is that FreeSurfer/BET/CAT12 are very sensitive to the INV1×INV2 noise that pymp2rage leaves around the head. So the early steps exist mostly to give those tools a clean, sharp brain to work on: mask from INV2, suppress background noise, denoise inside the brain with SANLM, then hand-correct the brain mask before surfaces are reconstructed.
 
